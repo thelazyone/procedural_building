@@ -1,19 +1,9 @@
 # Debug viewer dependencies
 
 # Import the main library
-# (assuming development mode: pip install -e ../procedural_building)
+# Install with: pip install -e ../procedural_building
 
-# 3D visualization (to be chosen)
-# Option 1: PyQt + OpenGL
-# PyQt6>=6.4.0
-# PyOpenGL>=3.1.6
-
-# Option 2: pygame + OpenGL
-# pygame>=2.5.0
-# PyOpenGL>=3.1.6
-
-# Option 3: pyvista (easiest for quick start)
-# pyvista>=0.43.0
-
-# For now, placeholder:
-# TODO: Choose and uncomment visualization library
+# 3D visualization with pygame + OpenGL
+pygame>=2.5.0
+PyOpenGL>=3.1.6
+PyOpenGL-accelerate>=3.1.6  # Optional but recommended for performance

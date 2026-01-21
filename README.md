@@ -17,33 +17,73 @@ The project is barely a draft of an idea, waaaays in **early development**.
 
 ## Quick Start
 
-```python
-from procedural_building.core.building import Building
+### Installation
 
-# Define floor footprint (one per floor)
-floor_footprint = [
-    [(0, 0), (10, 0), (10, 8), (0, 8)],  # Floor 1
-    [(0, 0), (10, 0), (10, 8), (0, 8)]   # Floor 2
+```bash
+# Install core library
+pip install -e .
+
+# Install debug viewer dependencies
+cd debug_viewer
+pip install -r requirements.txt
+```
+
+See [SETUP.md](SETUP.md) for detailed installation instructions.
+
+### Running the Debug Viewer
+
+```bash
+python -m debug_viewer
+```
+
+**Controls:**
+- Left mouse drag: Rotate camera
+- Mouse wheel: Zoom
+- Load button: Load selected building
+- Clear button: Remove building
+
+### Using the Library
+
+```python
+from procedural_building import Building
+
+# Define floor footprints (one per floor)
+floor_footprints = [
+    [(0, 0), (10, 0), (10, 10), (0, 10)],  # Floor 1
+    [(0, 0), (10, 0), (10, 10), (0, 10)],  # Floor 2
+    [(0, 0), (10, 0), (10, 10), (0, 10)],  # Floor 3
 ]
 
 # Create building with seed
-building = Building(floor_footprint, seed=12345, floor_height=3.0)
+building = Building(
+    floors=floor_footprints,
+    seed=12345,
+    floor_heights=[3.0, 3.0, 3.0]
+)
 
-# Lazy generation - triggers on access
-walls = building.get_walls()
-for wall in walls:
-    windows = wall.get_windows(density=0.3)
+# Access building data (lazy evaluation)
+print(f"Floors: {building.num_floors}")
+print(f"Total height: {building.get_total_height():.1f}m")
+
+# Inspect individual floors
+for i in range(building.num_floors):
+    floor = building.get_floor(i)
+    print(f"Floor {i}: {floor.footprint.area():.1f}m²")
 ```
+
+## Documentation
+
+- [SETUP.md](SETUP.md) - Installation and setup guide
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Design principles and patterns
+- [examples/](examples/) - Code examples
 
 ## Requirements
 
 - Python 3.8+
-- Shapely (for polygon operations)
-
-## Documentation
-
-See `docs/ARCHITECTURE.md` for design principles and patterns.
+- Shapely >= 2.0.0 (polygon operations)
+- pygame >= 2.5.0 (for debug viewer)
+- PyOpenGL >= 3.1.6 (for debug viewer)
 
 ## License
 
-MIT License - See LICENSE file
+MIT License - See [LICENSE](LICENSE)

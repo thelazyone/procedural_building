@@ -8,5 +8,6 @@ __version__ = "0.1.0"
 
 from .core.building import Building
 from .core.footprint import Footprint
+from .core.floor import Floor
 
-__all__ = ["Building", "Footprint"]
+__all__ = ["Building", "Footprint", "Floor"]
