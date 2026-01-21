@@ -40,11 +40,13 @@ class Floor:
         self.floor_idx = floor_idx
         self.params = params
         
-        # Lazy caches for future use
+        # Lazy caches for generated elements
         self._rooms: Optional[List] = None
         self._walls: Optional[List] = None
         self._doors: Optional[List] = None
+        self._windows: Optional[List] = None
         self._corners: Optional[List] = None
+        self._generated: bool = False
     
     @classmethod
     def from_vertices(
@@ -93,3 +95,62 @@ class Floor:
         """
         base = self.get_z_base(cumulative_heights)
         return base + self.height
+    
+    def generate_elements(self, seed: int, **generation_params):
+        """
+        Generate floor elements (doors, windows, etc.) lazily.
+        
+        Args:
+            seed: Generation seed
+            **generation_params: Parameters for generation (door_density, window_density, etc.)
+        """
+        if self._generated:
+            return
+        
+        # Import here to avoid circular dependency
+        from generators.floor import FloorGenerator
+        
+        generator = FloorGenerator()
+        result = generator.generate(self, seed, **generation_params)
+        
+        self._doors = result.get('doors', [])
+        self._windows = result.get('windows', [])
+        self._generated = True
+    
+    def get_doors(self, seed: int = 12345, **generation_params) -> List:
+        """
+        Get doors for this floor (generated lazily).
+        
+        Args:
+            seed: Generation seed
+            **generation_params: Parameters like door_density, edge_spacing
+            
+        Returns:
+            List of door placements
+        """
+        if not self._generated:
+            self.generate_elements(seed, **generation_params)
+        return self._doors if self._doors is not None else []
+    
+    def get_windows(self, seed: int = 12345, **generation_params) -> List:
+        """
+        Get windows for this floor (generated lazily).
+        
+        Args:
+            seed: Generation seed
+            **generation_params: Parameters like window_density
+            
+        Returns:
+            List of window placements
+        """
+        if not self._generated:
+            self.generate_elements(seed, **generation_params)
+        return self._windows if self._windows is not None else []
+    
+    def clear_generated(self):
+        """Clear generated elements to force regeneration on next access."""
+        self._generated = False
+        self._doors = None
+        self._windows = None
+        self._walls = None
+        self._corners = None

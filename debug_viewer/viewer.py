@@ -115,6 +115,12 @@ class DebugViewer:
         self.ui_elements.append(self.floor_height_input)
         y += 35
         
+        # Door Density
+        self.ui_elements.append(Label((10, y + 5), "Door Density:", 20))
+        self.door_density_input = TextInput(pygame.Rect(100, y, 190, 30), "0.05")
+        self.ui_elements.append(self.door_density_input)
+        y += 35
+        
         # Window Density
         self.ui_elements.append(Label((10, y + 5), "Win Density:", 20))
         self.window_density_input = TextInput(pygame.Rect(100, y, 190, 30), "0.3")
@@ -140,7 +146,7 @@ class DebugViewer:
         y += 35
         
         # Reload button
-        reload_btn = Button(pygame.Rect(10, y, 280, 35), "Reload with Parameters", self.reload_current_building)
+        reload_btn = Button(pygame.Rect(10, y, 280, 35), "reload", self.reload_current_building)
         self.ui_elements.append(reload_btn)
         y += 50
         
@@ -152,12 +158,14 @@ class DebugViewer:
         self.ui_elements.append(self.footprints_checkbox)
         y += 35
         
+        self.doors_checkbox = Checkbox(pygame.Rect(10, y, 280, 30), "Show Doors", True)
+        self.ui_elements.append(self.doors_checkbox)
+        y += 35
+        
         # Future checkboxes (not interactive yet)
         self.ui_elements.append(Label((40, y), "Show Walls (soon)", 18))
         y += 25
         self.ui_elements.append(Label((40, y), "Show Windows (soon)", 18))
-        y += 25
-        self.ui_elements.append(Label((40, y), "Show Doors (soon)", 18))
         y += 25
         self.ui_elements.append(Label((40, y), "Show Corners (soon)", 18))
         
@@ -239,9 +247,16 @@ class DebugViewer:
             floor_heights=floor_heights
         )
         
+        # Get door density for logging
+        try:
+            door_density = float(self.door_density_input.text)
+        except (ValueError, AttributeError):
+            door_density = 0.05
+        
         print(f"Loaded {building_name} with seed {seed}")
         print(f"  Floors: {self.current_building.num_floors}")
         print(f"  Floor height: {floor_height:.1f}m")
+        print(f"  Door density: {door_density}")
         print(f"  Total height: {self.current_building.get_total_height():.1f}m")
     
     def reload_current_building(self):
@@ -249,6 +264,12 @@ class DebugViewer:
         if self.selected_building is None:
             print("No building selected to reload")
             return
+        
+        # Clear generated elements from existing building if it exists
+        if self.current_building is not None:
+            for i in range(self.current_building.num_floors):
+                floor = self.current_building.get_floor(i)
+                floor.clear_generated()
         
         print(f"\nReloading {self.selected_building} with new parameters...")
         self.load_building_by_name(self.selected_building)
@@ -275,8 +296,9 @@ class DebugViewer:
                     if hasattr(element, 'handle_event'):
                         element.handle_event(event)
                 
-                # Update renderer visibility based on checkbox
+                # Update renderer visibility based on checkboxes
                 self.renderer.show_footprints = self.footprints_checkbox.checked
+                self.renderer.show_doors = self.doors_checkbox.checked
             else:
                 # 3D viewport area - handle camera
                 if event.type == MOUSEBUTTONDOWN:
@@ -315,7 +337,18 @@ class DebugViewer:
         glEnable(GL_DEPTH_TEST)
         self.renderer.render_grid()
         if self.current_building is not None:
-            self.renderer.render_building(self.current_building)
+            # Get generation parameters from UI
+            try:
+                door_density = float(self.door_density_input.text)
+            except (ValueError, AttributeError):
+                door_density = 0.05
+            
+            generation_params = {
+                'door_density': door_density,
+                'edge_spacing': 1.0
+            }
+            
+            self.renderer.render_building(self.current_building, generation_params)
         
         glDisable(GL_SCISSOR_TEST)
         
