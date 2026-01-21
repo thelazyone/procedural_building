@@ -115,6 +115,7 @@ class Floor:
         
         self._doors = result.get('doors', [])
         self._windows = result.get('windows', [])
+        self._corners = result.get('corners', [])
         self._generated = True
     
     def get_doors(self, seed: int = 12345, **generation_params) -> List:
@@ -146,6 +147,21 @@ class Floor:
         if not self._generated:
             self.generate_elements(seed, **generation_params)
         return self._windows if self._windows is not None else []
+    
+    def get_corners(self, seed: int = 12345, **generation_params) -> List:
+        """
+        Get corners for this floor (generated lazily).
+        
+        Args:
+            seed: Generation seed
+            **generation_params: Parameters like corner_size
+            
+        Returns:
+            List of corners
+        """
+        if not self._generated:
+            self.generate_elements(seed, **generation_params)
+        return self._corners if self._corners is not None else []
     
     def clear_generated(self):
         """Clear generated elements to force regeneration on next access."""

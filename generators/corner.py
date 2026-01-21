@@ -1,68 +1,73 @@
 """
 Corner generator.
 
-Generates corner details at footprint vertices.
+Generates corner properties for building edges where walls meet.
 """
 
-from typing import Any, Dict, List
-from ..core.generator_base import GeneratorBase
-from ..core.footprint import Point2D
+from typing import Any, Dict
+from core.generator_base import GeneratorBase
+import random
 
 
-class Corner:
+class CornerProperties:
     """
-    Represents a corner at a footprint vertex.
+    Properties for a corner (size, style, etc.).
     
-    Corners can have different styles/details based on the angle between walls.
+    Corners are vertical elements at each vertex where two walls meet.
     """
     
     def __init__(
         self,
-        position: Point2D,
-        floor_idx: int,
-        floor_height: float,
-        angle: float,
-        seed: int
+        width: float = 0.15,  # Width of corner piece
+        style: str = "standard"
     ):
         """
-        Initialize corner.
+        Initialize corner properties.
         
         Args:
-            position: Corner position (x, y)
-            floor_idx: Floor index
-            floor_height: Floor height in meters
-            angle: Interior angle at corner (radians)
-            seed: Seed for detail generation
+            width: Width of corner element in meters
+            style: Corner style (standard, ornate, rounded, etc.)
         """
-        self.position = position
-        self.floor_idx = floor_idx
-        self.floor_height = floor_height
-        self.angle = angle
-        self.seed = seed
+        self.width = width
+        self.style = style
 
 
 class CornerGenerator(GeneratorBase):
     """
-    Generates corners at footprint vertices.
+    Generates corner properties based on context and parameters.
+    
+    Corners are placed at each vertex of a floor's footprint.
     """
     
     def generate(
         self,
-        parent_context: Any,  # (Footprint, floor_idx, floor_height, seed)
+        parent_context: Any,  # Floor object
         seed: int,
+        corner_idx: int = 0,
         **params: Dict[str, Any]
-    ) -> List[Corner]:
+    ) -> CornerProperties:
         """
-        Generate corners at footprint vertices.
+        Generate properties for a corner.
         
         Args:
-            parent_context: Tuple of (Footprint, floor_idx, floor_height, building_seed)
+            parent_context: Context information (floor, building style, etc.)
             seed: Generation seed
-            **params: Corner parameters (style, etc.)
+            corner_idx: Index of this corner
+            **params: Override parameters (width, style, etc.)
             
         Returns:
-            List of Corner objects
+            CornerProperties object
         """
-        # TODO: Implement corner generation
-        # One corner per vertex, with angle calculation
-        pass
+        rng = random.Random(seed)
+        
+        # Extract only the relevant corner parameters
+        corner_params = {}
+        if 'corner_size' in params:  # UI uses 'corner_size'
+            corner_params['width'] = params['corner_size']
+        elif 'width' in params:
+            corner_params['width'] = params['width']
+        if 'style' in params:
+            corner_params['style'] = params['style']
+        
+        # Let CornerProperties handle all defaults
+        return CornerProperties(**corner_params)

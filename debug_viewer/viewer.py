@@ -81,7 +81,7 @@ class DebugViewer:
         y += 35
         
         # Radio buttons for building selection
-        building_names = ["Small House", "Big House", "L-Shaped"]
+        building_names = ["Small House", "Big House", "L-Shaped", "Angled House"]
         for i, name in enumerate(building_names):
             radio = RadioButton(
                 pygame.Rect(10, y, 280, 30),
@@ -129,7 +129,7 @@ class DebugViewer:
         
         # Corner Size
         self.ui_elements.append(Label((10, y + 5), "Corner Size:", 20))
-        self.corner_size_input = TextInput(pygame.Rect(100, y, 190, 30), "0.5")
+        self.corner_size_input = TextInput(pygame.Rect(100, y, 190, 30), "0.15")
         self.ui_elements.append(self.corner_size_input)
         y += 35
         
@@ -143,6 +143,12 @@ class DebugViewer:
         self.ui_elements.append(Label((10, y + 5), "Floor Band:", 20))
         self.floor_band_input = TextInput(pygame.Rect(100, y, 190, 30), "0.3")
         self.ui_elements.append(self.floor_band_input)
+        y += 35
+        
+        # Wall Offset
+        self.ui_elements.append(Label((10, y + 5), "Wall Offset:", 20))
+        self.wall_offset_input = TextInput(pygame.Rect(100, y, 190, 30), "0.05")
+        self.ui_elements.append(self.wall_offset_input)
         y += 35
         
         # Reload button
@@ -162,10 +168,17 @@ class DebugViewer:
         self.ui_elements.append(self.doors_checkbox)
         y += 35
         
-        # Future checkboxes (not interactive yet)
-        self.ui_elements.append(Label((40, y), "Show Walls (soon)", 18))
-        y += 25
-        self.ui_elements.append(Label((40, y), "Show Windows (soon)", 18))
+        self.windows_checkbox = Checkbox(pygame.Rect(10, y, 280, 30), "Show Windows", True)
+        self.ui_elements.append(self.windows_checkbox)
+        y += 35
+        
+        self.walls_checkbox = Checkbox(pygame.Rect(10, y, 280, 30), "Show Walls", True)
+        self.ui_elements.append(self.walls_checkbox)
+        y += 35
+        
+        self.corners_checkbox = Checkbox(pygame.Rect(10, y, 280, 30), "Show Corners", True)
+        self.ui_elements.append(self.corners_checkbox)
+        y += 35
         y += 25
         self.ui_elements.append(Label((40, y), "Show Corners (soon)", 18))
         
@@ -210,6 +223,41 @@ class DebugViewer:
             'default_seed': 99999
         }
         
+        # Angled Building: Hexagonal-style with 30-60 degree angles, 3 stories
+        # This creates an interesting shape with non-orthogonal walls
+        import math
+        # Create a partial hexagon-like shape
+        # Starting from left, going clockwise
+        angle_30 = math.radians(30)
+        angle_60 = math.radians(60)
+        w = 5.0  # base width
+        h = w * math.tan(angle_60)  # height for 60-degree angle
+        
+        templates['Angled House'] = {
+            'floors': [
+                [
+                    (-5, -5),           # Bottom left
+                    (5, -5),            # Bottom right
+                    (5, 3),        # Right angled edge (60 degrees)
+                    (-5, 3 + h),             # Right vertical
+                ],  # Floor 1
+                [
+                    (-5, -5),           # Bottom left
+                    (5, -5),            # Bottom right
+                    (5, 3),        # Right angled edge (60 degrees)
+                    (-5, 3 + h),             # Right vertical
+                ],  # Floor 2
+                [
+                    (-5, -5),           # Bottom left
+                    (5, -5),            # Bottom right
+                    (5, 3),        # Right angled edge (60 degrees)
+                    (-5, 3 + h),             # Right vertical
+                ],  # Floor 3
+            ],
+            'floor_heights': [3.0, 3.0, 3.0],
+            'default_seed': 77777
+        }
+        
         return templates
     
     def load_building_by_name(self, building_name: str):
@@ -247,16 +295,21 @@ class DebugViewer:
             floor_heights=floor_heights
         )
         
-        # Get door density for logging
+        # Get densities for logging
         try:
             door_density = float(self.door_density_input.text)
         except (ValueError, AttributeError):
             door_density = 0.05
         
+        try:
+            window_density = float(self.window_density_input.text)
+        except (ValueError, AttributeError):
+            window_density = 0.3
+        
         print(f"Loaded {building_name} with seed {seed}")
         print(f"  Floors: {self.current_building.num_floors}")
         print(f"  Floor height: {floor_height:.1f}m")
-        print(f"  Door density: {door_density}")
+        print(f"  Door density: {door_density}, Window density: {window_density}")
         print(f"  Total height: {self.current_building.get_total_height():.1f}m")
     
     def reload_current_building(self):
@@ -299,6 +352,9 @@ class DebugViewer:
                 # Update renderer visibility based on checkboxes
                 self.renderer.show_footprints = self.footprints_checkbox.checked
                 self.renderer.show_doors = self.doors_checkbox.checked
+                self.renderer.show_windows = self.windows_checkbox.checked
+                self.renderer.show_walls = self.walls_checkbox.checked
+                self.renderer.show_corners = self.corners_checkbox.checked
             else:
                 # 3D viewport area - handle camera
                 if event.type == MOUSEBUTTONDOWN:
@@ -343,9 +399,27 @@ class DebugViewer:
             except (ValueError, AttributeError):
                 door_density = 0.05
             
+            try:
+                window_density = float(self.window_density_input.text)
+            except (ValueError, AttributeError):
+                window_density = 0.3
+            
+            try:
+                corner_size = float(self.corner_size_input.text)
+            except (ValueError, AttributeError):
+                corner_size = 0.15
+            
+            try:
+                wall_offset = float(self.wall_offset_input.text)
+            except (ValueError, AttributeError):
+                wall_offset = 0.05
+            
             generation_params = {
                 'door_density': door_density,
-                'edge_spacing': 1.0
+                'window_density': window_density,
+                'edge_spacing': 1.0,
+                'corner_size': corner_size,
+                'wall_offset': wall_offset
             }
             
             self.renderer.render_building(self.current_building, generation_params)

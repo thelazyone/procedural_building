@@ -72,21 +72,21 @@ class DoorGenerator(GeneratorBase):
         """
         rng = random.Random(seed)
         
-        # Get parameters with defaults
-        width = params.get('width', 0.8)
-        height = params.get('height', 2.5)
-        style = params.get('style', 'standard')
+        # Extract only the relevant door parameters
+        door_params = {}
+        if 'width' in params:
+            door_params['width'] = params['width']
+        if 'height' in params:
+            door_params['height'] = params['height']
+        if 'style' in params:
+            door_params['style'] = params['style']
         
-        # First door could be main entrance
-        is_main_entrance = (door_idx == 0)
+        # First door is main entrance
+        door_params['is_main_entrance'] = (door_idx == 0)
         
-        # Could vary size based on whether it's main entrance
-        if is_main_entrance and 'width' not in params:
-            width = 1.0  # Slightly wider for main entrance
+        # Special case: wider main entrance (if not explicitly set)
+        if door_params['is_main_entrance'] and 'width' not in door_params:
+            door_params['width'] = 1.0  # Slightly wider for main entrance
         
-        return DoorProperties(
-            width=width,
-            height=height,
-            style=style,
-            is_main_entrance=is_main_entrance
-        )
+        # Let DoorProperties handle all other defaults
+        return DoorProperties(**door_params)

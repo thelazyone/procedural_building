@@ -12,6 +12,8 @@ from core.generator_base import GeneratorBase
 from core.floor import Floor
 from core.footprint import Point2D
 from .door import DoorGenerator, DoorProperties
+from .window import WindowGenerator, WindowProperties
+from .corner import CornerGenerator, CornerProperties
 
 
 class Door:
@@ -74,6 +76,66 @@ class Door:
         return self.properties.is_main_entrance
 
 
+class Window:
+    """
+    Complete window representation: placement + properties.
+    
+    Created by FloorGenerator by combining placement logic with
+    properties from WindowGenerator.
+    """
+    
+    def __init__(
+        self,
+        edge_idx: int,
+        position_on_edge: float,
+        edge_start: Point2D,
+        edge_end: Point2D,
+        facing_direction: Tuple[float, float],
+        floor_idx: int,
+        properties: WindowProperties
+    ):
+        """
+        Initialize window.
+        
+        Args:
+            edge_idx: Index of the edge this window is on
+            position_on_edge: Position along edge (0.0 = start, 1.0 = end)
+            edge_start: Start point of the edge
+            edge_end: End point of the edge
+            facing_direction: Normalized direction the window faces (outward normal)
+            floor_idx: Floor index
+            properties: Window properties (size, elevation, style, etc.)
+        """
+        self.edge_idx = edge_idx
+        self.position_on_edge = position_on_edge
+        self.edge_start = edge_start
+        self.edge_end = edge_end
+        self.facing_direction = facing_direction
+        self.floor_idx = floor_idx
+        self.properties = properties
+    
+    def get_world_position(self) -> Point2D:
+        """Calculate actual world (x, y) position of window center."""
+        x = self.edge_start[0] + (self.edge_end[0] - self.edge_start[0]) * self.position_on_edge
+        y = self.edge_start[1] + (self.edge_end[1] - self.edge_start[1]) * self.position_on_edge
+        return (x, y)
+    
+    @property
+    def width(self) -> float:
+        """Window width."""
+        return self.properties.width
+    
+    @property
+    def height(self) -> float:
+        """Window height."""
+        return self.properties.height
+    
+    @property
+    def elevation(self) -> float:
+        """Window elevation (height from floor to window sill)."""
+        return self.properties.elevation
+
+
 class DoorPlacement:
     """
     Represents a door placement along a footprint edge.
@@ -99,6 +161,82 @@ class DoorPlacement:
             edge_start: Start point of the edge
             edge_end: End point of the edge
             facing_direction: Normalized direction the door faces (outward normal)
+            floor_idx: Floor index
+        """
+        self.edge_idx = edge_idx
+        self.position_on_edge = position_on_edge
+        self.edge_start = edge_start
+        self.edge_end = edge_end
+        self.facing_direction = facing_direction
+        self.floor_idx = floor_idx
+
+
+class Corner:
+    """
+    Complete corner representation: placement + properties.
+    
+    Created by FloorGenerator by combining placement info with
+    properties from CornerGenerator.
+    """
+    
+    def __init__(
+        self,
+        vertex_idx: int,
+        position: Point2D,
+        prev_position: Point2D,
+        next_position: Point2D,
+        floor_idx: int,
+        properties: CornerProperties
+    ):
+        """
+        Initialize corner.
+        
+        Args:
+            vertex_idx: Index of the vertex this corner is at
+            position: Position of the corner vertex
+            prev_position: Position of previous vertex
+            next_position: Position of next vertex
+            floor_idx: Floor index
+            properties: Corner properties (width, style, etc.)
+        """
+        self.vertex_idx = vertex_idx
+        self.position = position
+        self.prev_position = prev_position
+        self.next_position = next_position
+        self.floor_idx = floor_idx
+        self.properties = properties
+    
+    @property
+    def width(self) -> float:
+        """Corner width."""
+        return self.properties.width
+
+
+class WindowPlacement:
+    """
+    Represents a window placement along a footprint edge.
+    
+    This is the intermediate representation before creating the Window object.
+    """
+    
+    def __init__(
+        self,
+        edge_idx: int,
+        position_on_edge: float,
+        edge_start: Point2D,
+        edge_end: Point2D,
+        facing_direction: Tuple[float, float],
+        floor_idx: int
+    ):
+        """
+        Initialize window placement.
+        
+        Args:
+            edge_idx: Index of the edge this window is on
+            position_on_edge: Position along edge (0.0 = start, 1.0 = end)
+            edge_start: Start point of the edge
+            edge_end: End point of the edge
+            facing_direction: Normalized direction the window faces (outward normal)
             floor_idx: Floor index
         """
         self.edge_idx = edge_idx
@@ -140,10 +278,16 @@ class FloorGenerator(GeneratorBase):
         floor = parent_context
         rng = random.Random(seed)
         
+        # Get number of edges for occupied segments tracking
+        edges = floor.footprint.get_edges()
+        num_edges = len(edges)
+        
         # Generate doors (only on ground floor for now)
         doors = []
+        door_occupied_segments = [[] for _ in range(num_edges)]
+        
         if floor.floor_idx == 0:
-            door_placements = self._generate_door_placements(
+            door_placements, door_occupied_segments = self._generate_door_placements(
                 floor, rng, door_density, edge_spacing
             )
             
@@ -174,12 +318,77 @@ class FloorGenerator(GeneratorBase):
                 )
                 doors.append(door)
         
-        # TODO: Generate windows (future implementation)
+        # Generate windows (on all floors)
         windows = []
+        window_placements = self._generate_window_placements(
+            floor, rng, window_density, edge_spacing,
+            door_occupied_segments  # Pass door occupied segments to avoid conflicts
+        )
+        
+        # Generate window properties for each placement
+        window_generator = WindowGenerator()
+        for i, placement in enumerate(window_placements):
+            # Derive seed for this specific window
+            window_seed = self.derive_seed(seed, f"window_{i}")
+            
+            # Get window properties from window generator
+            window_props = window_generator.generate(
+                parent_context=floor,
+                seed=window_seed,
+                window_idx=i,
+                total_windows=len(window_placements),
+                floor_idx=floor.floor_idx,
+                **params
+            )
+            
+            # Create complete Window object combining placement + properties
+            window = Window(
+                edge_idx=placement.edge_idx,
+                position_on_edge=placement.position_on_edge,
+                edge_start=placement.edge_start,
+                edge_end=placement.edge_end,
+                facing_direction=placement.facing_direction,
+                floor_idx=placement.floor_idx,
+                properties=window_props
+            )
+            windows.append(window)
+        
+        # Generate corners (at all vertices)
+        corners = []
+        vertices = floor.footprint.get_vertices()
+        num_vertices = len(vertices)
+        
+        corner_generator = CornerGenerator()
+        for i, vertex in enumerate(vertices):
+            prev_vertex = vertices[(i - 1) % num_vertices]
+            next_vertex = vertices[(i + 1) % num_vertices]
+            
+            # Derive seed for this specific corner
+            corner_seed = self.derive_seed(seed, f"corner_{i}")
+            
+            # Get corner properties from corner generator
+            corner_props = corner_generator.generate(
+                parent_context=floor,
+                seed=corner_seed,
+                corner_idx=i,
+                **params
+            )
+            
+            # Create complete Corner object
+            corner = Corner(
+                vertex_idx=i,
+                position=vertex,
+                prev_position=prev_vertex,
+                next_position=next_vertex,
+                floor_idx=floor.floor_idx,
+                properties=corner_props
+            )
+            corners.append(corner)
         
         return {
             'doors': doors,
-            'windows': windows
+            'windows': windows,
+            'corners': corners
         }
     
     def _generate_door_placements(
@@ -189,7 +398,7 @@ class FloorGenerator(GeneratorBase):
         door_density: float,
         edge_spacing: float,
         door_spacing: float = 2.0  # Min spacing between doors
-    ) -> List[DoorPlacement]:
+    ) -> Tuple[List[DoorPlacement], List[List[Tuple[float, float]]]]:
         """
         Generate door placements along floor perimeter with collision avoidance.
         
@@ -200,8 +409,8 @@ class FloorGenerator(GeneratorBase):
             edge_spacing: Min distance from edge corners (meters)
             door_spacing: Min distance between doors (meters)
             
-        Returns:
-            List of DoorPlacement objects
+            Returns:
+            Tuple of (List of DoorPlacement objects, occupied_segments list)
         """
         footprint = floor.footprint
         vertices = footprint.get_vertices()
@@ -303,7 +512,7 @@ class FloorGenerator(GeneratorBase):
             if not placed:
                 print(f"Warning: Could not place door {door_idx + 1}, skipping")
         
-        return placements
+        return placements, occupied_segments
     
     def _find_closest_valid_position(
         self,
@@ -385,3 +594,128 @@ class FloorGenerator(GeneratorBase):
                 return i
         
         return len(weights) - 1  # Fallback
+    
+    def _generate_window_placements(
+        self,
+        floor: Floor,
+        rng: random.Random,
+        window_density: float,
+        edge_spacing: float,
+        door_occupied_segments: List[List[Tuple[float, float]]],
+        window_spacing: float = 1.5  # Min spacing between windows
+    ) -> List[WindowPlacement]:
+        """
+        Generate window placements along floor perimeter with collision avoidance.
+        
+        Args:
+            floor: Floor object
+            rng: Random number generator
+            window_density: Windows per meter of perimeter
+            edge_spacing: Min distance from edge corners (meters)
+            door_occupied_segments: Occupied segments by doors (to avoid)
+            window_spacing: Min distance between windows (meters)
+            
+        Returns:
+            List of WindowPlacement objects
+        """
+        footprint = floor.footprint
+        vertices = footprint.get_vertices()
+        edges = footprint.get_edges()
+        
+        # Calculate total perimeter and edge lengths
+        edge_lengths = []
+        total_perimeter = 0.0
+        for edge_start, edge_end in edges:
+            dx = edge_end[0] - edge_start[0]
+            dy = edge_end[1] - edge_start[1]
+            length = math.sqrt(dx * dx + dy * dy)
+            edge_lengths.append(length)
+            total_perimeter += length
+        
+        # Calculate number of windows based on density
+        num_windows = max(0, int(total_perimeter * window_density))
+        
+        # Copy door occupied segments and add window segments to it
+        # This ensures windows don't collide with doors or other windows
+        occupied_segments = [list(segments) for segments in door_occupied_segments]
+        
+        placements = []
+        attempts_per_window = 10  # Max attempts to place each window
+        
+        for window_idx in range(num_windows):
+            placed = False
+            
+            for attempt in range(attempts_per_window):
+                # Pick a random edge weighted by edge length
+                edge_idx = self._weighted_random_choice(rng, edge_lengths)
+                edge_start, edge_end = edges[edge_idx]
+                edge_length = edge_lengths[edge_idx]
+                
+                # Check if edge is long enough for window placement
+                available_length = edge_length - 2 * edge_spacing
+                if available_length < 0.3:  # Need at least 0.3m for window
+                    continue
+                
+                # Pick random position along edge (avoiding edge_spacing from ends)
+                normalized_spacing = edge_spacing / edge_length
+                target_position = rng.uniform(normalized_spacing, 1.0 - normalized_spacing)
+                
+                # Convert to absolute position along edge (in meters)
+                abs_position = target_position * edge_length
+                
+                # Check collision with existing doors and windows on this edge
+                collision = False
+                for occupied_start, occupied_end in occupied_segments[edge_idx]:
+                    if not (abs_position + window_spacing / 2 < occupied_start or 
+                            abs_position - window_spacing / 2 > occupied_end):
+                        collision = True
+                        break
+                
+                if not collision:
+                    # Position is valid, place window here
+                    placed = True
+                else:
+                    # Try to find closest valid position
+                    valid_position = self._find_closest_valid_position(
+                        abs_position, edge_length, occupied_segments[edge_idx],
+                        edge_spacing, window_spacing
+                    )
+                    
+                    if valid_position is not None:
+                        target_position = valid_position / edge_length
+                        abs_position = valid_position
+                        placed = True
+                    else:
+                        # No valid position found, try another edge
+                        continue
+                
+                if placed:
+                    # Mark this segment as occupied
+                    occupied_start = abs_position - window_spacing / 2
+                    occupied_end = abs_position + window_spacing / 2
+                    occupied_segments[edge_idx].append((occupied_start, occupied_end))
+                    
+                    # Calculate facing direction (outward normal)
+                    edge_dx = edge_end[0] - edge_start[0]
+                    edge_dy = edge_end[1] - edge_start[1]
+                    edge_len = math.sqrt(edge_dx * edge_dx + edge_dy * edge_dy)
+                    
+                    # Perpendicular to edge (rotated 90 degrees clockwise for outward normal)
+                    normal_x = edge_dy / edge_len
+                    normal_y = -edge_dx / edge_len
+                    
+                    placement = WindowPlacement(
+                        edge_idx=edge_idx,
+                        position_on_edge=target_position,
+                        edge_start=edge_start,
+                        edge_end=edge_end,
+                        facing_direction=(normal_x, normal_y),
+                        floor_idx=floor.floor_idx
+                    )
+                    placements.append(placement)
+                    break
+            
+            # If we couldn't place this window after all attempts, skip it
+            # (silently, unlike doors)
+        
+        return placements
