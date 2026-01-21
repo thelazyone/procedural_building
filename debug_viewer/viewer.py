@@ -103,9 +103,45 @@ class DebugViewer:
         self.ui_elements.append(Label((10, y), "Parameters:", 22))
         y += 30
         
+        # Seed
         self.ui_elements.append(Label((10, y + 5), "Seed:", 20))
-        self.seed_input = TextInput(pygame.Rect(70, y, 220, 30), "12345")
+        self.seed_input = TextInput(pygame.Rect(100, y, 190, 30), "12345")
         self.ui_elements.append(self.seed_input)
+        y += 35
+        
+        # Floor Height
+        self.ui_elements.append(Label((10, y + 5), "Floor Height:", 20))
+        self.floor_height_input = TextInput(pygame.Rect(100, y, 190, 30), "3.0")
+        self.ui_elements.append(self.floor_height_input)
+        y += 35
+        
+        # Window Density
+        self.ui_elements.append(Label((10, y + 5), "Win Density:", 20))
+        self.window_density_input = TextInput(pygame.Rect(100, y, 190, 30), "0.3")
+        self.ui_elements.append(self.window_density_input)
+        y += 35
+        
+        # Corner Size
+        self.ui_elements.append(Label((10, y + 5), "Corner Size:", 20))
+        self.corner_size_input = TextInput(pygame.Rect(100, y, 190, 30), "0.5")
+        self.ui_elements.append(self.corner_size_input)
+        y += 35
+        
+        # Window Size
+        self.ui_elements.append(Label((10, y + 5), "Window Size:", 20))
+        self.window_size_input = TextInput(pygame.Rect(100, y, 190, 30), "1.2")
+        self.ui_elements.append(self.window_size_input)
+        y += 35
+        
+        # Floor Band
+        self.ui_elements.append(Label((10, y + 5), "Floor Band:", 20))
+        self.floor_band_input = TextInput(pygame.Rect(100, y, 190, 30), "0.3")
+        self.ui_elements.append(self.floor_band_input)
+        y += 35
+        
+        # Reload button
+        reload_btn = Button(pygame.Rect(10, y, 280, 35), "Reload with Parameters", self.reload_current_building)
+        self.ui_elements.append(reload_btn)
         y += 50
         
         # Visibility section
@@ -188,16 +224,34 @@ class DebugViewer:
             seed = template['default_seed']
             self.seed_input.text = str(seed)
         
+        # Get floor height from input
+        try:
+            floor_height = float(self.floor_height_input.text)
+            floor_heights = [floor_height] * len(template['floors'])
+        except (ValueError, AttributeError):
+            floor_heights = template['floor_heights']
+            self.floor_height_input.text = str(template['floor_heights'][0])
+        
         # Create building
         self.current_building = Building(
             floors=template['floors'],
             seed=seed,
-            floor_heights=template['floor_heights']
+            floor_heights=floor_heights
         )
         
         print(f"Loaded {building_name} with seed {seed}")
         print(f"  Floors: {self.current_building.num_floors}")
+        print(f"  Floor height: {floor_height:.1f}m")
         print(f"  Total height: {self.current_building.get_total_height():.1f}m")
+    
+    def reload_current_building(self):
+        """Reload current building with new parameters."""
+        if self.selected_building is None:
+            print("No building selected to reload")
+            return
+        
+        print(f"\nReloading {self.selected_building} with new parameters...")
+        self.load_building_by_name(self.selected_building)
     
     def clear_building(self):
         """Clear current building."""
