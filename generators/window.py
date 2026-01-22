@@ -1,14 +1,78 @@
 """
-Window generator.
+Window generator and Window class.
 
-Generates window properties (size, style, etc.) for placed windows.
-The FloorGenerator handles placement, this handles properties.
+Contains:
+- Window class: complete window representation (placement + properties)
+- WindowProperties: window properties (size, style, etc.)
+- WindowGenerator: generates window properties for placed windows
+
+The FloorGenerator handles placement logic, this handles the Window class and its properties.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 from core.generator_base import GeneratorBase
 from core.footprint import Point2D
 import random
+
+
+class Window:
+    """
+    Complete window representation: placement + properties.
+    
+    Created by FloorGenerator by combining placement logic with
+    properties from WindowGenerator.
+    """
+    
+    def __init__(
+        self,
+        edge_idx: int,
+        position_on_edge: float,
+        edge_start: Point2D,
+        edge_end: Point2D,
+        facing_direction: Tuple[float, float],
+        floor_idx: int,
+        properties: 'WindowProperties'
+    ):
+        """
+        Initialize window.
+        
+        Args:
+            edge_idx: Index of the edge this window is on
+            position_on_edge: Position along edge (0.0 = start, 1.0 = end)
+            edge_start: Start point of the edge
+            edge_end: End point of the edge
+            facing_direction: Normalized direction the window faces (outward normal)
+            floor_idx: Floor index
+            properties: Window properties (size, elevation, style, etc.)
+        """
+        self.edge_idx = edge_idx
+        self.position_on_edge = position_on_edge
+        self.edge_start = edge_start
+        self.edge_end = edge_end
+        self.facing_direction = facing_direction
+        self.floor_idx = floor_idx
+        self.properties = properties
+    
+    def get_world_position(self) -> Point2D:
+        """Calculate actual world (x, y) position of window center."""
+        x = self.edge_start[0] + (self.edge_end[0] - self.edge_start[0]) * self.position_on_edge
+        y = self.edge_start[1] + (self.edge_end[1] - self.edge_start[1]) * self.position_on_edge
+        return (x, y)
+    
+    @property
+    def width(self) -> float:
+        """Window width."""
+        return self.properties.width
+    
+    @property
+    def height(self) -> float:
+        """Window height."""
+        return self.properties.height
+    
+    @property
+    def elevation(self) -> float:
+        """Window elevation (height from floor to window sill)."""
+        return self.properties.elevation
 
 
 class WindowProperties:

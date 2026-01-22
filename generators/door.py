@@ -1,14 +1,78 @@
 """
-Door generator.
+Door generator and Door class.
 
-Generates door properties (size, style, etc.) for placed doors.
-The FloorGenerator handles placement, this handles properties.
+Contains:
+- Door class: complete door representation (placement + properties)
+- DoorProperties: door properties (size, style, etc.)
+- DoorGenerator: generates door properties for placed doors
+
+The FloorGenerator handles placement logic, this handles the Door class and its properties.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 from core.generator_base import GeneratorBase
 from core.footprint import Point2D
 import random
+
+
+class Door:
+    """
+    Complete door representation: placement + properties.
+    
+    Created by FloorGenerator by combining placement logic with 
+    properties from DoorGenerator.
+    """
+    
+    def __init__(
+        self,
+        edge_idx: int,
+        position_on_edge: float,
+        edge_start: Point2D,
+        edge_end: Point2D,
+        facing_direction: Tuple[float, float],
+        floor_idx: int,
+        properties: 'DoorProperties'
+    ):
+        """
+        Initialize door.
+        
+        Args:
+            edge_idx: Index of the edge this door is on
+            position_on_edge: Position along edge (0.0 = start, 1.0 = end)
+            edge_start: Start point of the edge
+            edge_end: End point of the edge
+            facing_direction: Normalized direction the door faces (outward normal)
+            floor_idx: Floor index
+            properties: Door properties (size, style, etc.)
+        """
+        self.edge_idx = edge_idx
+        self.position_on_edge = position_on_edge
+        self.edge_start = edge_start
+        self.edge_end = edge_end
+        self.facing_direction = facing_direction
+        self.floor_idx = floor_idx
+        self.properties = properties
+    
+    def get_world_position(self) -> Point2D:
+        """Calculate actual world (x, y) position of door center."""
+        x = self.edge_start[0] + (self.edge_end[0] - self.edge_start[0]) * self.position_on_edge
+        y = self.edge_start[1] + (self.edge_end[1] - self.edge_start[1]) * self.position_on_edge
+        return (x, y)
+    
+    @property
+    def width(self) -> float:
+        """Door width."""
+        return self.properties.width
+    
+    @property
+    def height(self) -> float:
+        """Door height."""
+        return self.properties.height
+    
+    @property
+    def is_main_entrance(self) -> bool:
+        """Whether this is the main entrance."""
+        return self.properties.is_main_entrance
 
 
 class DoorProperties:
