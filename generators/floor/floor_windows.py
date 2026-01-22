@@ -8,7 +8,7 @@ including spacing, collision avoidance, and density calculations.
 import math
 import random
 from typing import List, Tuple
-from core.floor import Floor
+from .floor import Floor
 from generators.window import Window, WindowGenerator
 
 

@@ -8,7 +8,7 @@ A floor represents a single level of a building, containing:
 """
 
 from typing import List, Optional, Any
-from .footprint import Footprint, Point2D
+from core.footprint import Footprint, Point2D
 
 
 class Floor:

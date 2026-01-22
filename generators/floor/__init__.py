@@ -7,7 +7,7 @@ by calling separate placement logic modules.
 
 from typing import Dict, Any
 from core.generator_base import GeneratorBase
-from core.floor import Floor
+from .floor import Floor
 from .floor_doors import generate_doors
 from .floor_windows import generate_windows
 from .floor_corners import generate_corners

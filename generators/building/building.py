@@ -8,8 +8,8 @@ A building is defined by:
 """
 
 from typing import List, Optional, Dict, Any, Union
-from .footprint import Footprint, Point2D
-from .floor import Floor
+from core.footprint import Footprint, Point2D
+from generators.floor.floor import Floor
 
 
 class Building:

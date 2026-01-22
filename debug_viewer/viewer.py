@@ -14,8 +14,8 @@ from OpenGL.GL import *
 # Add parent directory to path to import procedural_building
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from core.building import Building
-from core.floor import Floor
+from generators.building import Building
+from generators.floor.floor import Floor
 from debug_viewer.camera import OrbitCamera
 from debug_viewer.renderer import BuildingRenderer
 from debug_viewer.simple_ui import Button, Label, TextInput, Checkbox, RadioButton
