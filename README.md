@@ -15,6 +15,10 @@ The project is barely a draft of an idea, waaaays in **early development**.
 - `docs/`: Architecture documentation
 - `debug_viewer/`: Standalone 3D visualization tool
 
+## Hierarchy
+
+Building contains Floors, each contains Exterior and Rooms. Each Exterior-Room contains Architectural elements.
+
 ## Quick Start
 
 ### Installation
@@ -37,6 +41,7 @@ python -m debug_viewer
 ```
 
 **Controls:**
+
 - Left mouse drag: Rotate camera
 - Mouse wheel: Zoom
 - Load button: Load selected building
