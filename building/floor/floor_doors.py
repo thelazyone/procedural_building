@@ -126,10 +126,12 @@ def generate_doors(
                 edge_dx = edge_end[0] - edge_start[0]
                 edge_dy = edge_end[1] - edge_start[1]
                 edge_len = math.sqrt(edge_dx * edge_dx + edge_dy * edge_dy)
-                
-                # Perpendicular to edge (rotated 90 degrees clockwise for outward normal)
+                # Perpendicular: (dy, -dx) = right of edge = outward for CCW
                 normal_x = edge_dy / edge_len
                 normal_y = -edge_dx / edge_len
+                # Flip if polygon is CW (Shapely can return CW exterior from split/make_valid)
+                if not footprint.is_ccw:
+                    normal_x, normal_y = -normal_x, -normal_y
                 
                 # Generate door properties
                 door_seed = hash((seed, "door", door_idx)) % (2**31)

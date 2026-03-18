@@ -7,7 +7,7 @@ A footprint represents the 2D floor plan outline of a building floor.
 
 from typing import List, Tuple
 from shapely.geometry import Polygon as ShapelyPolygon
-from shapely import is_valid, make_valid
+from shapely import is_valid, make_valid, is_ccw as shapely_is_ccw
 
 Point2D = Tuple[float, float]
 
@@ -67,7 +67,20 @@ class Footprint:
     def area(self) -> float:
         """Calculate footprint area in square meters."""
         return self._polygon.area
-    
+
+    @property
+    def is_ccw(self) -> bool:
+        """True if exterior ring is counter-clockwise (interior to the left when traversing)."""
+        try:
+            return shapely_is_ccw(self._polygon.exterior)
+        except (AttributeError, TypeError):
+            # Fallback: signed area > 0 means CCW
+            verts = self._vertices
+            n = len(verts)
+            area = sum(verts[i][0] * verts[(i + 1) % n][1] - verts[(i + 1) % n][0] * verts[i][1]
+                       for i in range(n)) / 2.0
+            return area > 0
+
     def perimeter(self) -> float:
         """Calculate footprint perimeter in meters."""
         return self._polygon.length

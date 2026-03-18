@@ -15,8 +15,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from core.camera import OrbitCamera
 from core.simple_ui import Button, Label, TextInput, RadioButton, Checkbox
 from block_viewer.renderer import BlockRenderer
+from building_viewer.renderer import BuildingRenderer
+from building import Building, generate_building_params
+from utils.seeding import derive_seed
 import random
-from typing import List
+from typing import List, Tuple
 
 from blocks.subdivide import subdivide_block
 from blocks.filter_internal import filter_footprints_touching_block
@@ -53,6 +56,24 @@ def _floor_counts_for_footprints(
     return counts
 
 
+def _building_seed(base_seed: int, building_idx: int, footprint: List[Tuple[float, float]]) -> int:
+    """
+    Derive a unique seed for a building from base seed and building identity.
+
+    Each building gets a deterministic but unique seed by combining:
+    - Base seed (passed through)
+    - Building index (unique per footprint)
+    - Footprint geometry hash (ensures different shapes get different seeds)
+
+    Returns:
+        Derived seed for this building's procedural generation
+    """
+    # Round vertices for stable hashing (avoid float precision issues)
+    footprint_sig = tuple(tuple(round(c, 6) for c in v) for v in footprint)
+    footprint_hash = hash(footprint_sig)
+    return derive_seed(base_seed, "building", building_idx, footprint_hash)
+
+
 class BlockViewer:
     """
     Main block viewer application.
@@ -85,6 +106,8 @@ class BlockViewer:
         self.camera = OrbitCamera(target=(0.0, 0.0, 3.0), distance=40.0)
         self.renderer = BlockRenderer()
         self.renderer.setup_gl(self.viewport_width, height)
+        self.building_renderer = BuildingRenderer()
+        self.building_renderer.setup_gl(self.viewport_width, height)
 
         self.clock = pygame.time.Clock()
         self.running = True
@@ -228,6 +251,18 @@ class BlockViewer:
         self.ui_elements.append(self.show_3d_cb)
         y += 35
 
+        self.full_details_cb = Checkbox(
+            pygame.Rect(10, y, 280, 30), "Full building details", False
+        )
+        self.ui_elements.append(self.full_details_cb)
+        y += 35
+
+        self.show_roof_cb = Checkbox(
+            pygame.Rect(10, y, 280, 30), "Show roof", True
+        )
+        self.ui_elements.append(self.show_roof_cb)
+        y += 35
+
         self.grid_cb = Checkbox(pygame.Rect(10, y, 280, 30), "Grid", True)
         self.ui_elements.append(self.grid_cb)
 
@@ -306,6 +341,7 @@ class BlockViewer:
                 self.renderer.show_block_outline = self.block_outline_cb.checked
                 self.renderer.show_footprints = self.footprints_cb.checked
                 self.renderer.show_grid = self.grid_cb.checked
+                self.building_renderer.show_roof = self.show_roof_cb.checked
             else:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     self.camera.handle_mouse_down(mouse_pos, event.button)
@@ -383,13 +419,48 @@ class BlockViewer:
             floor_counts = _floor_counts_for_footprints(
                 len(footprints), seed, avg_floors, variance
             )
-            self.renderer.render_block(
-                self.block_vertices,
-                footprints,
-                show_3d=self.show_3d_cb.checked,
-                floor_height=floor_height,
-                floor_counts=floor_counts,
+
+            use_full_details = (
+                self.full_details_cb.checked and self.show_3d_cb.checked
             )
+            buildings_visible = self.footprints_cb.checked
+            if use_full_details and buildings_visible:
+                # Generate individual buildings with full details (doors, windows, etc.)
+                # Each building gets a unique seed and params derived from it
+                self.renderer.render_block_outline(self.block_vertices)
+                courtyard_color = (0.35, 0.4, 0.35, 0.5)
+                z_base = 0.01
+                for i, footprint in enumerate(footprints):
+                    num_floors = floor_counts[i] if i < len(floor_counts) else 0
+                    if num_floors > 0:
+                        building_seed = _building_seed(seed, i, footprint)
+                        params = generate_building_params(building_seed)
+                        floors_data = [footprint] * num_floors
+                        building_floor_height = params.pop("floor_height")
+                        floor_heights = [building_floor_height] * num_floors
+                        building = Building(
+                            floors=floors_data,
+                            seed=building_seed,
+                            floor_heights=floor_heights,
+                        )
+                        self.building_renderer.render_building(
+                            building, params
+                        )
+                    elif buildings_visible:
+                        self.renderer.render_footprint_flat(
+                            footprint, courtyard_color, z_base
+                        )
+            elif buildings_visible:
+                self.renderer.render_block(
+                    self.block_vertices,
+                    footprints,
+                    show_3d=self.show_3d_cb.checked,
+                    floor_height=floor_height,
+                    floor_counts=floor_counts,
+                )
+            else:
+                # Buildings hidden - still show block outline
+                self.renderer.render_block_outline(self.block_vertices)
 
         glDisable(GL_SCISSOR_TEST)
 

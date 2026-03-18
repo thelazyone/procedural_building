@@ -31,6 +31,7 @@ class BuildingRenderer:
         self.show_windows = True
         self.show_doors = True
         self.show_corners = True
+        self.show_roof = True
 
         # Colors
         self.footprint_color = (0.3, 0.5, 0.8, 0.6)  # Blue with transparency
@@ -39,6 +40,7 @@ class BuildingRenderer:
         self.main_entrance_color = (0.9, 0.5, 0.1, 1.0)  # Brighter orange
         self.window_color = (0.6, 0.8, 0.9, 0.8)  # Light blue with transparency
         self.wall_color = (0.7, 0.7, 0.65, 0.9)  # Light gray/beige
+        self.roof_color = (0.7, 0.7, 0.65, 0.95)  # Grey like walls
         self.corner_color = (0.5, 0.5, 0.45, 1.0)  # Darker gray for corners
 
     def setup_gl(self, width: int, height: int):
@@ -117,18 +119,19 @@ class BuildingRenderer:
         glEnd()
         glLineWidth(1.0)
 
-    def render_door(self, door, z_base: float):
+    def render_door(self, door, z_base: float, wall_offset: float = 0.05):
         """
         Render a door as a vertical rectangle.
 
         Args:
             door: Door object with position and properties
             z_base: Base Z height of the floor
+            wall_offset: Wall inward offset - doors are translated outward past the wall
         """
         if not self.show_doors:
             return
 
-        # Get door position
+        # Get door position (on footprint edge)
         pos = door.get_world_position()
         x, y = pos
 
@@ -142,10 +145,10 @@ class BuildingRenderer:
         width_x = -facing_y
         width_y = facing_x
 
-        # Calculate door corners (slightly inset from wall for visibility)
-        inset = 0.05  # 5cm inset from wall
-        x_inset = x - facing_x * inset
-        y_inset = y - facing_y * inset
+        # Translate door outward past the wall surface (wall is offset inward by wall_offset)
+        outward_offset = wall_offset + 0.05  # Past wall + 5cm for visibility
+        x_inset = x + facing_x * outward_offset
+        y_inset = y + facing_y * outward_offset
 
         # Door endpoints
         hw = width / 2.0  # half width
@@ -353,18 +356,19 @@ class BuildingRenderer:
             self.corner_color
         )
 
-    def render_window(self, window, z_base: float):
+    def render_window(self, window, z_base: float, wall_offset: float = 0.05):
         """
         Render a window as a vertical rectangle.
 
         Args:
             window: Window object with position and properties
             z_base: Base Z height of the floor
+            wall_offset: Wall inward offset - windows are translated outward past the wall
         """
         if not self.show_windows:
             return
 
-        # Get window position
+        # Get window position (on footprint edge)
         pos = window.get_world_position()
         x, y = pos
 
@@ -379,10 +383,10 @@ class BuildingRenderer:
         width_x = -facing_y
         width_y = facing_x
 
-        # Calculate window corners (slightly inset from wall for visibility)
-        inset = 0.03  # 3cm inset from wall
-        x_inset = x - facing_x * inset
-        y_inset = y - facing_y * inset
+        # Translate window outward past the wall surface (wall is offset inward by wall_offset)
+        outward_offset = wall_offset + 0.03  # Past wall + 3cm for visibility
+        x_inset = x + facing_x * outward_offset
+        y_inset = y + facing_y * outward_offset
 
         # Window endpoints
         hw = width / 2.0  # half width
@@ -453,7 +457,7 @@ class BuildingRenderer:
                     **generation_params
                 )
                 for door in doors:
-                    self.render_door(door, z_base)
+                    self.render_door(door, z_base, wall_offset=wall_offset)
 
             # Render windows for this floor
             if self.show_windows:
@@ -462,7 +466,37 @@ class BuildingRenderer:
                     **generation_params
                 )
                 for window in windows:
-                    self.render_window(window, z_base)
+                    self.render_window(window, z_base, wall_offset=wall_offset)
+
+            # Render roof on top floor
+            if self.show_roof and floor_idx == building.num_floors - 1:
+                z_roof = building.get_floor_z_top(floor_idx)
+                self.render_roof(vertices, z_roof)
+
+    def render_roof(self, vertices: List[Point2D], z: float):
+        """
+        Render a flat roof as a polygon at the top of the building.
+
+        Args:
+            vertices: Footprint vertices (top floor outline)
+            z: Z height of the roof
+        """
+        if not self.show_roof or not vertices:
+            return
+
+        glColor4f(*self.roof_color)
+        glBegin(GL_POLYGON)
+        for x, y in vertices:
+            glVertex3f(x, y, z)
+        glEnd()
+
+        glLineWidth(1.5)
+        glColor4f(0.4, 0.4, 0.35, 1.0)
+        glBegin(GL_LINE_LOOP)
+        for x, y in vertices:
+            glVertex3f(x, y, z)
+        glEnd()
+        glLineWidth(1.0)
 
     def render_scene(self, building: Building = None):
         """

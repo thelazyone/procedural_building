@@ -138,6 +138,7 @@ class BlockRenderer:
         z_top = z_base + height
         n = len(vertices)
 
+        # Top face (colored - grey roof only in full-details mode via BuildingRenderer)
         top_color = (
             min(1.0, color[0] * 1.2),
             min(1.0, color[1] * 1.2),
@@ -176,7 +177,9 @@ class BlockRenderer:
             glEnd()
 
         glLineWidth(1.5)
-        glColor4f(edge_color[0] * 0.7, edge_color[1] * 0.7, edge_color[2] * 0.7, 1.0)
+        glColor4f(
+            top_color[0] * 0.7, top_color[1] * 0.7, top_color[2] * 0.7, 1.0
+        )
         glBegin(GL_LINE_LOOP)
         for x, y in vertices:
             glVertex3f(x, y, z_top)

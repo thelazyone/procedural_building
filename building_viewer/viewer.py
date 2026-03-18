@@ -179,8 +179,10 @@ class BuildingViewer:
         self.corners_checkbox = Checkbox(pygame.Rect(10, y, 280, 30), "Show Corners", True)
         self.ui_elements.append(self.corners_checkbox)
         y += 35
-        y += 25
-        self.ui_elements.append(Label((40, y), "Show Corners (soon)", 18))
+
+        self.roof_checkbox = Checkbox(pygame.Rect(10, y, 280, 30), "Show Roof", True)
+        self.ui_elements.append(self.roof_checkbox)
+        y += 35
 
         # Load first building by default
         self.selected_building = "Small House"
@@ -327,6 +329,7 @@ class BuildingViewer:
                 self.renderer.show_windows = self.windows_checkbox.checked
                 self.renderer.show_walls = self.walls_checkbox.checked
                 self.renderer.show_corners = self.corners_checkbox.checked
+                self.renderer.show_roof = self.roof_checkbox.checked
             else:
                 if event.type == MOUSEBUTTONDOWN:
                     self.camera.handle_mouse_down(mouse_pos, event.button)
