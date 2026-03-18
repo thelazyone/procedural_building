@@ -1,0 +1,7 @@
+# Block viewer dependencies (same as building_viewer)
+
+# Install the main library: pip install -e .
+
+pygame>=2.5.0
+PyOpenGL>=3.1.6
+PyOpenGL-accelerate>=3.1.6

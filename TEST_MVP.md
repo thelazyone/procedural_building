@@ -61,7 +61,7 @@ python examples/simple_building.py
 ### Step 3: Launch Debug Viewer
 
 ```bash
-python -m debug_viewer
+python -m building_viewer
 ```
 
 **Expected behavior:**

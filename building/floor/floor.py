@@ -108,7 +108,7 @@ class Floor:
             return
         
         # Import here to avoid circular dependency
-        from generators.floor import FloorGenerator
+        from building.floor import FloorGenerator
         
         generator = FloorGenerator()
         result = generator.generate(self, seed, **generation_params)

@@ -15,7 +15,7 @@ This installs the `procedural_building` library in development mode along with i
 ### 2. Install debug viewer dependencies
 
 ```bash
-cd debug_viewer
+cd building_viewer
 pip install -r requirements.txt
 ```
 
@@ -29,7 +29,7 @@ This installs:
 From the project root:
 
 ```bash
-python -m debug_viewer
+python -m building_viewer
 ```
 
 ## Running Examples
@@ -43,5 +43,5 @@ python examples/simple_building.py
 After modifying the core library, just run the debug viewer again (no reinstall needed thanks to `-e` flag):
 
 ```bash
-python -m debug_viewer
+python -m building_viewer
 ```

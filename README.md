@@ -9,11 +9,16 @@ The project is barely a draft of an idea, waaaays in **early development**.
 
 ## Structure
 
-- `core/`: Foundation classes (footprint, building, generator base)
-- `generators/`: Hierarchical element generators
+- `street_network/`: Tensor field → road graph (Layer 1, future)
+- `blocks/`: Block extraction, shrink, divide (Layer 2, future)
+- `parcels/`: Parcel subdivision, footprint generation (Layer 3, future)
+- `building/`: Building generation from footprints (Layer 4)
+- `interior/`: Rooms, corridors, furniture (Layer 5, future)
+- `core/`: Foundation classes (footprint, generator base)
 - `utils/`: Seeding, coordinate conversion utilities
 - `docs/`: Architecture documentation
-- `debug_viewer/`: Standalone 3D visualization tool
+- `building_viewer/`: 3D visualization for individual buildings
+- `block_viewer/`: 3D visualization for blocks and subdivided footprints
 
 ## Hierarchy
 
@@ -28,7 +33,7 @@ Building contains Floors, each contains Exterior and Rooms. Each Exterior-Room c
 pip install -e .
 
 # Install debug viewer dependencies
-cd debug_viewer
+cd building_viewer
 pip install -r requirements.txt
 ```
 
@@ -37,7 +42,7 @@ See [SETUP.md](SETUP.md) for detailed installation instructions.
 ### Running the Debug Viewer
 
 ```bash
-python -m debug_viewer
+python -m building_viewer
 ```
 
 **Controls:**
@@ -50,7 +55,7 @@ python -m debug_viewer
 ### Using the Library
 
 ```python
-from procedural_building import Building
+from procedural_building import Building  # or: from building import Building
 
 # Define floor footprints (one per floor)
 floor_footprints = [

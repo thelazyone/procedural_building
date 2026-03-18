@@ -7,7 +7,7 @@ Corners are placed at each vertex of the floor's footprint.
 
 from typing import List
 from .floor import Floor
-from generators.corner import Corner, CornerGenerator
+from building.corner import Corner, CornerGenerator
 
 
 def generate_corners(

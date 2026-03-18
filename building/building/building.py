@@ -9,7 +9,7 @@ A building is defined by:
 
 from typing import List, Optional, Dict, Any, Union
 from core.footprint import Footprint, Point2D
-from generators.floor.floor import Floor
+from building.floor.floor import Floor
 
 
 class Building:

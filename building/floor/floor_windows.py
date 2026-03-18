@@ -9,7 +9,7 @@ import math
 import random
 from typing import List, Tuple
 from .floor import Floor
-from generators.window import Window, WindowGenerator
+from building.window import Window, WindowGenerator
 
 
 def generate_windows(

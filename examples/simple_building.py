@@ -10,8 +10,8 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from generators.building import Building
-from generators.floor.floor import Floor
+from building import Building
+from building.floor.floor import Floor
 from core.footprint import Footprint
 
 

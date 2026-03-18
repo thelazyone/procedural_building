@@ -5,8 +5,8 @@ Generates wall segments from footprint edges.
 """
 
 from typing import Any, Dict, List
-from ..core.generator_base import GeneratorBase
-from ..core.footprint import Point2D
+from core.generator_base import GeneratorBase
+from core.footprint import Point2D
 
 
 class WallSegment:

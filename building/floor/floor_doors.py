@@ -10,7 +10,7 @@ import random
 from typing import List, Tuple
 from .floor import Floor
 from core.footprint import Point2D
-from generators.door import Door, DoorGenerator
+from building.door import Door, DoorGenerator
 
 
 def generate_doors(

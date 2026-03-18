@@ -74,7 +74,7 @@ for door in doors:
 
 ## Visualization
 
-The `debug_viewer` will soon visualize doors as markers on the building footprint.
+The `building_viewer` visualizes doors on the building footprint.
 
 ## Future Enhancements
 

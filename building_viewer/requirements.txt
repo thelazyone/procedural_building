@@ -1,4 +1,4 @@
-# Debug viewer dependencies
+# Building viewer dependencies
 
 # Import the main library
 # Install with: pip install -e ../procedural_building
