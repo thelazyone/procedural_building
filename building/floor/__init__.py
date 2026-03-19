@@ -30,7 +30,7 @@ class FloorGenerator(GeneratorBase):
         door_density: float = 0.05,
         window_density: float = 0.3,
         edge_spacing: float = 1.0,
-        above_occlusion_door_chance: float = 0.3,
+        above_occlusion_door_chance: float = 0.65,
         window_spacing: float = 1.5,
         door_spacing: float = 2.0,
         **params

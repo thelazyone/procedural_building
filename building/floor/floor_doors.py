@@ -71,7 +71,7 @@ def generate_doors(
     door_density: float = 0.05,
     edge_spacing: float = 1.0,
     door_spacing: float = 2.0,
-    above_occlusion_door_chance: float = 0.3,
+    above_occlusion_door_chance: float = 0.65,
     cumulative_heights: Optional[List[float]] = None,
     **params
 ) -> Tuple[List[Door], List[List[Tuple[float, float]]]]:

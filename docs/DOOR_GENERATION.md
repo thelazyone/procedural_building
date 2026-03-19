@@ -15,7 +15,12 @@ The `FloorGenerator` is responsible for:
 
 ### Door Placement Logic
 
-For **ground floor only** (floor_idx == 0):
+There is **no single parameter** for all floors:
+
+- **Ground floor** (`floor_idx == 0`): uses **`door_density`** (doors per meter along front/back façade segments).
+- **Upper floors**: uses **`above_occlusion_door_chance`** (0–1). Only segments marked *above occlusion* (balcony / over shorter neighbor) are eligible; each rolls this chance independently. Procedural buildings also draw this from `generate_building_params` as `above_occlusion_door_chance`.
+
+For **ground floor**:
 
 1. **Calculate number of doors**
    - Based on `door_density` parameter (doors per meter of perimeter)
@@ -35,13 +40,13 @@ For **ground floor only** (floor_idx == 0):
 
 ## Parameters
 
-### Exposed Parameters (in UI)
-- **door_density**: Doors per meter of perimeter (default: 0.05)
-  - Example: 40m perimeter × 0.05 = 2 doors
+### Exposed Parameters (building viewer)
+- **door_density**: Ground floor only — doors per meter of perimeter (default in UI: 0.05)
+- **above_occlusion_door_chance**: Upper floors — probability per eligible segment (default in UI: 0.65)
 
-### Code Parameters (not exposed)
+### Code / defaults
 - **edge_spacing**: Minimum distance from edge corners (default: 1.0m)
-  - Prevents doors from being placed too close to corners
+- **above_occlusion_door_chance** default in `FloorGenerator` / `generate_doors`: 0.65
 
 ## Usage
 

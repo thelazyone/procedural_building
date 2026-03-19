@@ -577,6 +577,7 @@ class BlockViewer:
         print("=== Block Viewer ===")
         print("Controls:")
         print("  - Left mouse drag: Rotate camera")
+        print("  - Middle mouse drag: Pan view")
         print("  - Mouse wheel: Zoom in/out")
         print("  - Reload: Apply new seed/parameters")
         print()

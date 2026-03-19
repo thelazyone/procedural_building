@@ -121,6 +121,14 @@ class BuildingViewer:
         self.ui_elements.append(self.door_density_input)
         y += 35
 
+        # Upper floors: above-occlusion segments only (see docs/DOOR_GENERATION.md)
+        self.ui_elements.append(Label((10, y + 5), "Upper door chance:", 20))
+        self.above_occlusion_door_chance_input = TextInput(
+            pygame.Rect(100, y, 190, 30), "0.65"
+        )
+        self.ui_elements.append(self.above_occlusion_door_chance_input)
+        y += 35
+
         # Window Density
         self.ui_elements.append(Label((10, y + 5), "Win Density:", 20))
         self.window_density_input = TextInput(pygame.Rect(100, y, 190, 30), "0.3")
@@ -288,7 +296,14 @@ class BuildingViewer:
         print(f"Loaded {building_name} with seed {seed}")
         print(f"  Floors: {self.current_building.num_floors}")
         print(f"  Floor height: {floor_height:.1f}m")
-        print(f"  Door density: {door_density}, Window density: {window_density}")
+        try:
+            upper_door = float(self.above_occlusion_door_chance_input.text)
+        except (ValueError, AttributeError):
+            upper_door = 0.65
+        print(
+            f"  Door density: {door_density}, upper-floor chance: {upper_door}, "
+            f"Window density: {window_density}"
+        )
         print(f"  Total height: {self.current_building.get_total_height():.1f}m")
 
     def reload_current_building(self):
@@ -367,6 +382,16 @@ class BuildingViewer:
                 door_density = 0.05
 
             try:
+                above_occlusion_door_chance = float(
+                    self.above_occlusion_door_chance_input.text
+                )
+            except (ValueError, AttributeError):
+                above_occlusion_door_chance = 0.65
+            above_occlusion_door_chance = max(
+                0.0, min(1.0, above_occlusion_door_chance)
+            )
+
+            try:
                 window_density = float(self.window_density_input.text)
             except (ValueError, AttributeError):
                 window_density = 0.3
@@ -383,6 +408,7 @@ class BuildingViewer:
 
             generation_params = {
                 'door_density': door_density,
+                'above_occlusion_door_chance': above_occlusion_door_chance,
                 'window_density': window_density,
                 'edge_spacing': 1.0,
                 'corner_size': corner_size,
@@ -419,6 +445,7 @@ class BuildingViewer:
         print("=== Building Viewer ===")
         print("Controls:")
         print("  - Left mouse drag: Rotate camera")
+        print("  - Middle mouse drag: Pan view")
         print("  - Mouse wheel: Zoom in/out")
         print("  - Load button: Load selected building")
         print("  - Clear button: Clear building")

@@ -13,6 +13,8 @@ from typing import Dict, Any
 PARAM_RANGES = {
     "floor_height": (2.5, 3.5),
     "door_density": (0.03, 0.08),
+    # Upper floors: each above-occlusion segment rolls this (0–1) to allow a door
+    "above_occlusion_door_chance": (0.5, 0.88),
     "window_density": (0.2, 0.45),
     "window_fill_prob": (0.55, 0.85),   # Probability of placing window at valid slot (avg ~0.275) - many empty slots
     "front_window_density_mult": (1.5, 2.1),  # Avg 1.8 - tighter spacing = more windows
@@ -37,7 +39,8 @@ def generate_building_params(seed: int) -> Dict[str, Any]:
     Returns:
         Dictionary of parameters suitable for Building/FloorGenerator:
         - floor_height: Height per floor in meters
-        - door_density: Doors per meter of perimeter
+        - door_density: Ground floor — doors per meter of perimeter
+        - above_occlusion_door_chance: Upper floors — probability per eligible segment
         - window_density: Windows per meter of perimeter
         - window_fill_prob: Probability of placing window at valid slot (0-1)
         - front_window_density_mult: Front facade slot spacing multiplier (avg 1.8)
