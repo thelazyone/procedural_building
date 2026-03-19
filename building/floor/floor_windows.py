@@ -1,235 +1,167 @@
 """
 Window placement logic for floors.
 
-Contains the logic for determining WHERE windows should be placed on a floor,
-including spacing, collision avoidance, and density calculations.
+Facade-aware: windows only on FRONT and BACK segments (none on OCCLUSION).
+Merged segments: collinear same-kind treated as one for distribution.
+Front has higher density than back. Uses fixed slot grid for alignment across floors.
 """
 
 import math
 import random
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from .floor import Floor
+from .facade_segments import get_merged_segments_for_windows
 from building.window import Window, WindowGenerator
+from core.facade import FacadeSegmentKind
+
+# Defaults when not in params (from building param generator averages)
+DEFAULT_FRONT_DENSITY_MULT = 1.8
+DEFAULT_BACK_DENSITY_MULT = 1.2
+DEFAULT_WINDOW_FILL_PROB = 0.3  # Lower so many slots stay empty
+
+
+def _get_edge_length(edges: List, edge_idx: int) -> float:
+    """Get length of edge in meters."""
+    start, end = edges[edge_idx]
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    return math.sqrt(dx * dx + dy * dy)
+
+
+def _get_slot_params_for_segment(
+    edge_length: float,
+    edge_spacing: float,
+    window_spacing: float,
+    start_param: float,
+    end_param: float,
+    density_mult: float,
+) -> List[float]:
+    """
+    Slot positions (param 0..1) for a segment. Density multiplier modifies effective spacing:
+    higher mult = tighter spacing = more windows. effective_spacing = window_spacing / mult.
+    """
+    # Clamp to edge_spacing from edge ends
+    margin = edge_spacing / edge_length
+    start_param = max(start_param, margin)
+    end_param = min(end_param, 1.0 - margin)
+    if end_param <= start_param:
+        return []
+
+    seg_length_m = edge_length * (end_param - start_param)
+    if seg_length_m < 0.5:
+        return []
+    # Effective spacing: divide by density_mult so front (higher mult) gets tighter slots
+    effective_spacing = window_spacing / density_mult
+    n = max(1, int(seg_length_m / effective_spacing))
+    seg_usable = end_param - start_param
+    return [start_param + seg_usable * i / (n + 1) for i in range(1, n + 1)]
 
 
 def generate_windows(
     floor: Floor,
     seed: int,
-    door_occupied_segments: List[List[Tuple[float, float]]],
+    door_occupied_segments: Optional[List[List[Tuple[float, float]]]] = None,
     window_density: float = 0.3,
     edge_spacing: float = 1.0,
     window_spacing: float = 1.5,
+    cumulative_heights: Optional[List[float]] = None,
     **params
 ) -> List[Window]:
     """
-    Generate windows for a floor based on placement logic.
-    
-    This function determines WHERE windows should be placed (spacing, density, etc.)
-    and creates Window objects with properties from WindowGenerator.
-    
-    Args:
-        floor: Floor object to generate windows for
-        seed: Generation seed
-        door_occupied_segments: Occupied segments by doors (to avoid collisions)
-        window_density: Number of windows per meter of perimeter
-        edge_spacing: Minimum spacing from edge corners (meters)
-        window_spacing: Minimum spacing between windows (meters)
-        **params: Additional parameters passed to WindowGenerator
-        
-    Returns:
-        List of Window objects with placement and properties
+    Generate windows for a floor. Facade-aware: FRONT (higher density), BACK (lower),
+    none on OCCLUSION. Merges collinear same-kind segments. Uses slot grid for alignment.
+    door_occupied_segments: used only for REMOVAL after doors placed (pass empty initially).
     """
-    rng = random.Random(seed)
     footprint = floor.footprint
     edges = footprint.get_edges()
-    
-    # Calculate total perimeter and edge lengths
-    edge_lengths = []
-    total_perimeter = 0.0
-    for edge_start, edge_end in edges:
-        dx = edge_end[0] - edge_start[0]
-        dy = edge_end[1] - edge_start[1]
-        length = math.sqrt(dx * dx + dy * dy)
-        edge_lengths.append(length)
-        total_perimeter += length
-    
-    # Calculate number of windows based on density
-    num_windows = max(0, int(total_perimeter * window_density))
-    
-    # Copy door occupied segments and add window segments to it
-    # This ensures windows don't collide with doors or other windows
-    occupied_segments = [list(segments) for segments in door_occupied_segments]
-    
-    windows = []
+    facade = floor.get_facade_definition()
+
+    # Floor Z range for effective kind
+    if cumulative_heights and floor.floor_idx < len(cumulative_heights):
+        z_base = cumulative_heights[floor.floor_idx]
+        z_top = cumulative_heights[floor.floor_idx + 1] if floor.floor_idx + 1 < len(cumulative_heights) else z_base + floor.height
+    else:
+        z_base = floor.floor_idx * floor.height
+        z_top = z_base + floor.height
+
+    merged = get_merged_segments_for_windows(facade, z_base, z_top)
+    edge_lengths = [_get_edge_length(edges, i) for i in range(len(edges))]
     window_generator = WindowGenerator()
-    attempts_per_window = 10  # Max attempts to place each window
-    
-    for window_idx in range(num_windows):
-        placed = False
-        
-        for attempt in range(attempts_per_window):
-            # Pick a random edge weighted by edge length
-            edge_idx = _weighted_random_choice(rng, edge_lengths)
-            edge_start, edge_end = edges[edge_idx]
-            edge_length = edge_lengths[edge_idx]
-            
-            # Check if edge is long enough for window placement
-            available_length = edge_length - 2 * edge_spacing
-            if available_length < 0.3:  # Need at least 0.3m for window
+    windows = []
+    placed_on_edge = {}  # edge_idx -> [(param, effective_spacing), ...]
+
+    front_mult = params.get("front_window_density_mult", DEFAULT_FRONT_DENSITY_MULT)
+    back_mult = params.get("back_window_density_mult", DEFAULT_BACK_DENSITY_MULT)
+    fill_prob = params.get("window_fill_prob", DEFAULT_WINDOW_FILL_PROB)
+
+    for mseg in merged:
+        edge_idx = mseg.edge_idx
+        edge_len = edge_lengths[edge_idx]
+        edge_start, edge_end = edges[edge_idx]
+        mult = front_mult if mseg.kind == FacadeSegmentKind.FRONT else back_mult
+        effective_spacing = window_spacing / mult
+
+        slots = _get_slot_params_for_segment(
+            edge_len, edge_spacing, window_spacing,
+            mseg.start_param, mseg.end_param, mult,
+        )
+        if edge_idx not in placed_on_edge:
+            placed_on_edge[edge_idx] = []
+
+        for slot_idx, param in enumerate(slots):
+            abs_pos = param * edge_len
+            # Enforce spacing: no overlap with already-placed windows on this edge
+            conflict = any(
+                abs(abs_pos - p * edge_len) < max(eff_sp, effective_spacing)
+                for p, eff_sp in placed_on_edge[edge_idx]
+            )
+            if conflict:
                 continue
-            
-            # Pick random position along edge (avoiding edge_spacing from ends)
-            normalized_spacing = edge_spacing / edge_length
-            target_position = rng.uniform(normalized_spacing, 1.0 - normalized_spacing)
-            
-            # Convert to absolute position along edge (in meters)
-            abs_position = target_position * edge_length
-            
-            # Check collision with existing doors and windows on this edge
-            collision = False
-            for occupied_start, occupied_end in occupied_segments[edge_idx]:
-                if not (abs_position + window_spacing / 2 < occupied_start or 
-                        abs_position - window_spacing / 2 > occupied_end):
-                    collision = True
-                    break
-            
-            if not collision:
-                # Position is valid, place window here
-                placed = True
-            else:
-                # Try to find closest valid position
-                valid_position = _find_closest_valid_position(
-                    abs_position, edge_length, occupied_segments[edge_idx],
-                    edge_spacing, window_spacing
-                )
-                
-                if valid_position is not None:
-                    target_position = valid_position / edge_length
-                    abs_position = valid_position
-                    placed = True
-                else:
-                    # No valid position found, try another edge
+
+            slot_seed = hash((seed, "win_slot", edge_idx, round(param, 4))) % (2**31)
+            if random.Random(slot_seed).random() > fill_prob:
+                continue
+
+            # Check door occupancy (for removal pass - if doors already placed)
+            if door_occupied_segments and edge_idx < len(door_occupied_segments):
+                collision = False
+                for occ_start, occ_end in door_occupied_segments[edge_idx]:
+                    if not (abs_pos + window_spacing / 2 < occ_start or abs_pos - window_spacing / 2 > occ_end):
+                        collision = True
+                        break
+                if collision:
                     continue
-            
-            if placed:
-                # Mark this segment as occupied
-                occupied_start = abs_position - window_spacing / 2
-                occupied_end = abs_position + window_spacing / 2
-                occupied_segments[edge_idx].append((occupied_start, occupied_end))
-                
-                # Calculate facing direction (outward normal)
-                edge_dx = edge_end[0] - edge_start[0]
-                edge_dy = edge_end[1] - edge_start[1]
-                edge_len = math.sqrt(edge_dx * edge_dx + edge_dy * edge_dy)
-                # Perpendicular: (dy, -dx) = right of edge = outward for CCW
-                normal_x = edge_dy / edge_len
-                normal_y = -edge_dx / edge_len
-                # Flip if polygon is CW (Shapely can return CW exterior from split/make_valid)
-                if not footprint.is_ccw:
-                    normal_x, normal_y = -normal_x, -normal_y
-                
-                # Generate window properties
-                window_seed = hash((seed, "window", window_idx)) % (2**31)
-                window_props = window_generator.generate(
-                    parent_context=floor,
-                    seed=window_seed,
-                    window_idx=window_idx,
-                    total_windows=num_windows,
-                    floor_idx=floor.floor_idx,
-                    **params
-                )
-                
-                # Create complete Window object
-                window = Window(
-                    edge_idx=edge_idx,
-                    position_on_edge=target_position,
-                    edge_start=edge_start,
-                    edge_end=edge_end,
-                    facing_direction=(normal_x, normal_y),
-                    floor_idx=floor.floor_idx,
-                    properties=window_props
-                )
-                windows.append(window)
-                break
-            
-        # If we couldn't place this window after all attempts, skip it silently
-    
-    return windows
 
-
-def _find_closest_valid_position(
-    target_pos: float,
-    edge_length: float,
-    occupied_segments: List[Tuple[float, float]],
-    edge_spacing: float,
-    window_spacing: float
-) -> float:
-    """
-    Find the closest valid position to target_pos that doesn't collide.
-    
-    Args:
-        target_pos: Desired position along edge (meters)
-        edge_length: Total length of edge (meters)
-        occupied_segments: List of (start, end) tuples of occupied segments
-        edge_spacing: Min distance from edge ends
-        window_spacing: Min spacing between windows
-        
-    Returns:
-        Valid position in meters, or None if no valid position exists
-    """
-    # Try positions in both directions from target
-    search_distance = window_spacing
-    best_position = None
-    best_distance = float('inf')
-    
-    # Search in steps of 0.1m
-    step = 0.1
-    for offset in range(int(search_distance / step) + 1):
-        for direction in [1, -1]:
-            if offset == 0 and direction == -1:
-                continue  # Skip duplicate at offset=0
-            
-            test_pos = target_pos + direction * offset * step
-            
-            # Check bounds
-            if test_pos < edge_spacing or test_pos > edge_length - edge_spacing:
+            # Facing direction
+            dx = edge_end[0] - edge_start[0]
+            dy = edge_end[1] - edge_start[1]
+            length = math.sqrt(dx * dx + dy * dy)
+            if length < 1e-9:
                 continue
-            
-            # Check collision with all occupied segments
-            valid = True
-            for occupied_start, occupied_end in occupied_segments:
-                if not (test_pos + window_spacing / 2 < occupied_start or 
-                        test_pos - window_spacing / 2 > occupied_end):
-                    valid = False
-                    break
-            
-            if valid:
-                distance = abs(test_pos - target_pos)
-                if distance < best_distance:
-                    best_distance = distance
-                    best_position = test_pos
-    
-    return best_position
+            normal_x = dy / length
+            normal_y = -dx / length
+            if not footprint.is_ccw:
+                normal_x, normal_y = -normal_x, -normal_y
 
+            window_seed = hash((seed, "window", edge_idx, slot_idx, floor.floor_idx)) % (2**31)
+            window_props = window_generator.generate(
+                parent_context=floor,
+                seed=window_seed,
+                window_idx=len(windows),
+                total_windows=len(slots),
+                floor_idx=floor.floor_idx,
+                **params
+            )
 
-def _weighted_random_choice(rng: random.Random, weights: List[float]) -> int:
-    """
-    Choose random index weighted by values.
-    
-    Args:
-        rng: Random number generator
-        weights: List of weights
-        
-    Returns:
-        Selected index
-    """
-    total = sum(weights)
-    r = rng.uniform(0, total)
-    
-    cumulative = 0.0
-    for i, weight in enumerate(weights):
-        cumulative += weight
-        if r <= cumulative:
-            return i
-    
-    return len(weights) - 1  # Fallback
+            windows.append(Window(
+                edge_idx=edge_idx,
+                position_on_edge=param,
+                edge_start=edge_start,
+                edge_end=edge_end,
+                facing_direction=(normal_x, normal_y),
+                floor_idx=floor.floor_idx,
+                properties=window_props,
+            ))
+            placed_on_edge[edge_idx].append((param, effective_spacing))
+
+    return windows

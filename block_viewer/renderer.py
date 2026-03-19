@@ -5,11 +5,16 @@ Renders block outline and subdivided building footprints.
 Footprints are convex (concave ones split in pipeline). Triangle fan for fill.
 """
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from OpenGL.GL import *
 from OpenGL.GLU import *
 
 from core.footprint import Point2D
+from core.facade import FacadeDefinition, FacadeSegmentKind
+
+# Stair rendering
+STAIR_COLOR = (0.5, 0.45, 0.4, 0.9)  # Wood/concrete ramp
+STAIR_RAMP_WIDTH = 1.2  # meters, door-like width
 
 
 def _triangulate_polygon(vertices: List[Point2D]) -> List[Tuple[Point2D, Point2D, Point2D]]:
@@ -25,6 +30,17 @@ def _triangulate_polygon(vertices: List[Point2D]) -> List[Tuple[Point2D, Point2D
         triangles.append((v0, vertices[i], vertices[i + 1]))
     return triangles
 
+
+# Consistent colors for facade segment kinds (same across all buildings)
+FACADE_FRONT_COLOR = (0.2, 0.6, 0.9, 1.0)      # Blue - main road face
+FACADE_OCCLUSION_COLOR = (0.9, 0.5, 0.2, 1.0)  # Orange - facing other buildings
+FACADE_BACK_COLOR = (0.4, 0.5, 0.45, 1.0)     # Gray-green - backroad sides
+
+FACADE_KIND_COLORS = {
+    FacadeSegmentKind.FRONT: FACADE_FRONT_COLOR,
+    FacadeSegmentKind.OCCLUSION: FACADE_OCCLUSION_COLOR,
+    FacadeSegmentKind.BACK: FACADE_BACK_COLOR,
+}
 
 # Distinct colors for building footprints (flat for now)
 FOOTPRINT_COLORS = [
@@ -125,6 +141,61 @@ class BlockRenderer:
         glEnd()
         glLineWidth(1.0)
 
+    def render_footprint_facade_segments(
+        self,
+        vertices: List[Point2D],
+        facade_definition: FacadeDefinition,
+        z: float = 0.01,
+        line_width: float = 4.0,
+        floor_z_base: Optional[float] = None,
+        floor_z_top: Optional[float] = None,
+    ):
+        """
+        Render footprint edges with colors by facade segment kind at z plane.
+
+        FRONT=blue, OCCLUSION=orange, BACK=gray-green. Same colors for all buildings.
+
+        When floor_z_base and floor_z_top are provided, uses effective kind for that
+        floor (OCCLUSION segments above occlusion_height render as BACK).
+        """
+        if not self.show_footprints or not vertices or not facade_definition.segments:
+            return
+
+        n = len(vertices)
+        edges = [
+            (vertices[i], vertices[(i + 1) % n])
+            for i in range(n)
+        ]
+
+        use_effective = (
+            floor_z_base is not None and floor_z_top is not None
+        )
+
+        glLineWidth(line_width)
+        for seg in facade_definition.segments:
+            if seg.edge_idx >= len(edges):
+                continue
+            start_pt, end_pt = edges[seg.edge_idx]
+            sx, sy = start_pt
+            ex, ey = end_pt
+            # Parametric interpolation
+            x1 = sx + seg.start_param * (ex - sx)
+            y1 = sy + seg.start_param * (ey - sy)
+            x2 = sx + seg.end_param * (ex - sx)
+            y2 = sy + seg.end_param * (ey - sy)
+            kind = (
+                seg.effective_kind_at_height(floor_z_base, floor_z_top)
+                if use_effective
+                else seg.kind
+            )
+            color = FACADE_KIND_COLORS.get(kind, FACADE_BACK_COLOR)
+            glColor4f(*color)
+            glBegin(GL_LINES)
+            glVertex3f(x1, y1, z)
+            glVertex3f(x2, y2, z)
+            glEnd()
+        glLineWidth(1.0)
+
     def render_footprint_extruded(
         self,
         vertices: List[Point2D],
@@ -186,6 +257,106 @@ class BlockRenderer:
         glEnd()
         glLineWidth(1.0)
 
+    def render_stair(self, stair, ramp_width: float = STAIR_RAMP_WIDTH):
+        """
+        Render a single stair. Two variants:
+        - ramp: Simple 45° ramp in door direction.
+        - landing_side_ramp: Horizontal square landing + side ramp (when drop > 1m).
+        """
+        x, y = stair.from_position
+        from_z = stair.from_z
+        to_z = stair.to_z
+        drop = from_z - to_z
+        if drop <= 0:
+            return
+
+        dx, dy = stair.direction
+        wx = -dy * (ramp_width / 2)
+        wy = dx * (ramp_width / 2)
+
+        if stair.variant == "landing_side_ramp" and stair.side_ramp_direction:
+            # Landing: horizontal square in front of door
+            sdx, sdy = stair.side_ramp_direction
+            # Back edge at door, front edge at door + direction * ramp_width
+            back_left = (x - dy * ramp_width / 2, y + dx * ramp_width / 2, from_z)
+            back_right = (x + dy * ramp_width / 2, y - dx * ramp_width / 2, from_z)
+            front_right = (x + dx * ramp_width + dy * ramp_width / 2,
+                           y + dy * ramp_width - dx * ramp_width / 2, from_z)
+            front_left = (x + dx * ramp_width - dy * ramp_width / 2,
+                          y + dy * ramp_width + dx * ramp_width / 2, from_z)
+            glColor4f(*STAIR_COLOR)
+            glBegin(GL_QUADS)
+            glVertex3f(*back_left)
+            glVertex3f(*back_right)
+            glVertex3f(*front_right)
+            glVertex3f(*front_left)
+            glEnd()
+            # Side ramp: from landing edge in +side_ramp_direction, extends outward
+            h = drop  # 45° ramp horizontal distance
+            # Ramp attaches to landing edge in +side_ramp_direction (the "front" edge)
+            landing_center = (x + dx * ramp_width / 2, y + dy * ramp_width / 2)
+            near_cx = landing_center[0] + sdx * ramp_width / 2
+            near_cy = landing_center[1] + sdy * ramp_width / 2
+            # Ramp quad: near edge perpendicular to side_ramp_direction
+            perp_x, perp_y = -sdy, sdx
+            ramp_near_left = (near_cx - perp_x * ramp_width / 2, near_cy - perp_y * ramp_width / 2, from_z)
+            ramp_near_right = (near_cx + perp_x * ramp_width / 2, near_cy + perp_y * ramp_width / 2, from_z)
+            ramp_far_left = (near_cx - perp_x * ramp_width / 2 + sdx * h,
+                             near_cy - perp_y * ramp_width / 2 + sdy * h, to_z)
+            ramp_far_right = (near_cx + perp_x * ramp_width / 2 + sdx * h,
+                              near_cy + perp_y * ramp_width / 2 + sdy * h, to_z)
+            glBegin(GL_QUADS)
+            glVertex3f(*ramp_near_left)
+            glVertex3f(*ramp_near_right)
+            glVertex3f(*ramp_far_right)
+            glVertex3f(*ramp_far_left)
+            glEnd()
+            glColor4f(0.35, 0.32, 0.28, 1.0)
+            glLineWidth(1.5)
+            glBegin(GL_LINE_LOOP)
+            glVertex3f(*back_left)
+            glVertex3f(*back_right)
+            glVertex3f(*front_right)
+            glVertex3f(*front_left)
+            glEnd()
+            glBegin(GL_LINE_LOOP)
+            glVertex3f(*ramp_near_left)
+            glVertex3f(*ramp_near_right)
+            glVertex3f(*ramp_far_right)
+            glVertex3f(*ramp_far_left)
+            glEnd()
+            glLineWidth(1.0)
+        else:
+            # Simple ramp
+            h = drop
+            lx = x + dx * h
+            ly = y + dy * h
+            p1 = (x + wx, y + wy, from_z)
+            p2 = (x - wx, y - wy, from_z)
+            p3 = (lx - wx, ly - wy, to_z)
+            p4 = (lx + wx, ly + wy, to_z)
+            glColor4f(*STAIR_COLOR)
+            glBegin(GL_QUADS)
+            glVertex3f(*p1)
+            glVertex3f(*p2)
+            glVertex3f(*p3)
+            glVertex3f(*p4)
+            glEnd()
+            glColor4f(0.35, 0.32, 0.28, 1.0)
+            glLineWidth(1.5)
+            glBegin(GL_LINE_LOOP)
+            glVertex3f(*p1)
+            glVertex3f(*p2)
+            glVertex3f(*p3)
+            glVertex3f(*p4)
+            glEnd()
+            glLineWidth(1.0)
+
+    def render_stairs(self, stairs: list, ramp_width: float = STAIR_RAMP_WIDTH):
+        """Render a list of stairs as simple ramps."""
+        for stair in stairs:
+            self.render_stair(stair, ramp_width)
+
     def render_block(
         self,
         block_vertices: List[Point2D],
@@ -193,6 +364,7 @@ class BlockRenderer:
         show_3d: bool = True,
         floor_height: float = 3.0,
         floor_counts: List[int] = None,
+        floor_heights: Optional[List[float]] = None,
     ):
         """
         Render block and all subdivided footprints.
@@ -201,8 +373,10 @@ class BlockRenderer:
             block_vertices: Block boundary
             footprint_vertices_list: List of building footprint vertex lists
             show_3d: If True, extrude footprints; if False, render flat
-            floor_height: Height per floor in meters
+            floor_height: Default height per floor (used when floor_heights not provided)
             floor_counts: Floor count per footprint (0 = no building, courtyard)
+            floor_heights: Per-building floor height in meters. When provided,
+                each building uses its own floor height for extrusion.
         """
         # Block outline
         self.render_block_outline(block_vertices)
@@ -214,8 +388,13 @@ class BlockRenderer:
         for i, footprint in enumerate(footprint_vertices_list):
             color = FOOTPRINT_COLORS[i % len(FOOTPRINT_COLORS)]
             num_floors = floor_counts[i] if i < len(floor_counts) else 0
+            fh = (
+                floor_heights[i]
+                if floor_heights and i < len(floor_heights)
+                else floor_height
+            )
             if show_3d and num_floors > 0:
-                building_height = floor_height * num_floors
+                building_height = fh * num_floors
                 self.render_footprint_extruded(
                     footprint, color, z_base, building_height
                 )

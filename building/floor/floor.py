@@ -7,8 +7,11 @@ A floor represents a single level of a building, containing:
 - Eventually: rooms, walls, doors, corners
 """
 
-from typing import List, Optional, Any
+from typing import List, Optional, Any, TYPE_CHECKING
 from core.footprint import Footprint, Point2D
+
+if TYPE_CHECKING:
+    from core.facade import FacadeDefinition
 
 
 class Floor:
@@ -39,7 +42,9 @@ class Floor:
         self.height = height
         self.floor_idx = floor_idx
         self.params = params
-        
+        self.facade_definition: Optional["FacadeDefinition"] = None
+        """2D facade definition (front/back/occlusion). Set by Building when part of one."""
+
         # Lazy caches for generated elements
         self._rooms: Optional[List] = None
         self._walls: Optional[List] = None
@@ -71,6 +76,17 @@ class Floor:
         footprint = Footprint(vertices)
         return cls(footprint, height, floor_idx, **params)
     
+    def get_facade_definition(self) -> "FacadeDefinition":
+        """
+        Get facade definition for this floor.
+        Uses building's definition if set, otherwise default (all FRONT).
+        """
+        if self.facade_definition is not None:
+            return self.facade_definition
+        from core.facade import default_facade_definition
+        num_edges = len(self.footprint.get_edges())
+        return default_facade_definition(num_edges)
+
     def get_z_base(self, cumulative_heights: List[float]) -> float:
         """
         Get the base Z coordinate of this floor.

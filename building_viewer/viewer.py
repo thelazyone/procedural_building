@@ -28,7 +28,7 @@ class BuildingViewer:
     Provides UI for building selection and 3D visualization.
     """
 
-    def __init__(self, width: int = 1400, height: int = 900):
+    def __init__(self, width: int = 1600, height: int = 1000):
         """
         Initialize building viewer.
 

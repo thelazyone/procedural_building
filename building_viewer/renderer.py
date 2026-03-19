@@ -420,6 +420,8 @@ class BuildingRenderer:
 
         if generation_params is None:
             generation_params = {}
+        generation_params = dict(generation_params)
+        generation_params.setdefault('cumulative_heights', building._cumulative_heights)
 
         # Render each floor
         for floor_idx in range(building.num_floors):

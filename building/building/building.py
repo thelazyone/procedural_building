@@ -9,6 +9,7 @@ A building is defined by:
 
 from typing import List, Optional, Dict, Any, Union
 from core.footprint import Footprint, Point2D
+from core.facade import FacadeDefinition, default_facade_definition
 from building.floor.floor import Floor
 
 
@@ -25,6 +26,7 @@ class Building:
         seed: int,
         floor_heights: Optional[List[float]] = None,
         default_floor_height: float = 3.0,
+        facade_definition: Optional[FacadeDefinition] = None,
         **params
     ):
         """
@@ -35,6 +37,8 @@ class Building:
             seed: Seed for deterministic generation
             floor_heights: Optional list of heights per floor (if floors are vertex lists)
             default_floor_height: Default height if floor_heights not provided
+            facade_definition: 2D facade definition (front/back/occlusion per segment).
+                If None, all edges are treated as FRONT. Future: computed from block/parcel.
             **params: Additional building parameters (style, material, etc.)
         """
         self.seed = seed
@@ -42,7 +46,7 @@ class Building:
         
         # Initialize floors
         if isinstance(floors[0], Floor):
-            self.floors = floors
+            self.floors = list(floors)
         else:
             # Create Floor objects from vertex lists
             if floor_heights is None:
@@ -54,6 +58,16 @@ class Building:
                 Floor.from_vertices(vertices, height=floor_heights[i], floor_idx=i)
                 for i, vertices in enumerate(floors)
             ]
+        
+        # Facade definition: 2D classification of edges (front/back/occlusion)
+        num_edges = len(self.floors[0].footprint.get_edges())
+        if facade_definition is None:
+            facade_definition = default_facade_definition(num_edges)
+        self.facade_definition = facade_definition
+        
+        # Attach facade definition to floors for use by generators
+        for floor in self.floors:
+            floor.facade_definition = self.facade_definition
         
         # Calculate cumulative heights for easy Z positioning
         self._cumulative_heights = [0.0]

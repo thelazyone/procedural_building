@@ -25,6 +25,9 @@ from blocks.subdivide import subdivide_block
 from blocks.filter_internal import filter_footprints_touching_block
 from blocks.split_concave import split_concave_footprints
 from blocks.gap import apply_gaps
+from blocks.facade_noise import apply_facade_noise
+from blocks.facade_from_block import compute_facade_definition
+from blocks.stairs import collect_stairs_from_buildings
 
 
 def _floor_counts_for_footprints(
@@ -81,7 +84,7 @@ class BlockViewer:
     Provides UI for block selection and 3D visualization.
     """
 
-    def __init__(self, width: int = 1400, height: int = 900):
+    def __init__(self, width: int = 1600, height: int = 1000):
         self.width = width
         self.height = height
         self.ui_panel_width = 300
@@ -220,6 +223,11 @@ class BlockViewer:
         self.ui_elements.append(self.gap_size_input)
         y += 35
 
+        self.ui_elements.append(Label((10, y + 5), "Facade noise:", 20))
+        self.facade_noise_input = TextInput(pygame.Rect(100, y, 190, 30), "0")
+        self.ui_elements.append(self.facade_noise_input)
+        y += 35
+
         reload_btn = Button(pygame.Rect(10, y, 280, 35), "Reload", self._reload_block)
         self.ui_elements.append(reload_btn)
         y += 50
@@ -265,6 +273,11 @@ class BlockViewer:
 
         self.grid_cb = Checkbox(pygame.Rect(10, y, 280, 30), "Grid", True)
         self.ui_elements.append(self.grid_cb)
+        y += 50
+
+        self.ui_elements.append(Label((10, y), "Facade (z=0):", 22))
+        y += 28
+        self.ui_elements.append(Label((10, y), "Blue=front, Orange=occlusion, Gray=back", 14))
 
         self.selected_block = block_names[0]
         self._load_block(block_names[0])
@@ -400,6 +413,17 @@ class BlockViewer:
                 block_vertices=self.block_vertices,
             )
             try:
+                facade_noise = float(self.facade_noise_input.text)
+            except (ValueError, AttributeError):
+                facade_noise = 0.0
+            facade_noise = max(0.0, facade_noise)
+            footprints = apply_facade_noise(
+                footprints,
+                seed=seed,
+                facade_noise=facade_noise,
+                block_vertices=self.block_vertices,
+            )
+            try:
                 floor_height = float(self.floor_height_input.text)
             except (ValueError, AttributeError):
                 floor_height = 3.0
@@ -424,25 +448,58 @@ class BlockViewer:
                 self.full_details_cb.checked and self.show_3d_cb.checked
             )
             buildings_visible = self.footprints_cb.checked
+
+            # Pre-generate building params for ALL buildings first (deterministic metadata)
+            # This gives per-building floor_height for cubes, facade, occlusion_height
+            building_params_list = []
+            building_floor_heights = []
+            building_heights = []
+            for i, footprint in enumerate(footprints):
+                num_floors = floor_counts[i] if i < len(floor_counts) else 0
+                if num_floors > 0:
+                    building_seed = _building_seed(seed, i, footprint)
+                    params = generate_building_params(building_seed)
+                    building_params_list.append(params)
+                    fh = params.get("floor_height", floor_height)
+                    building_floor_heights.append(fh)
+                    building_heights.append(num_floors * fh)
+                else:
+                    building_params_list.append(None)
+                    building_floor_heights.append(0.0)
+                    building_heights.append(0.0)
+
+            # Compute facade definitions (with occlusion_height from adjacent buildings)
+            facade_definitions = []
+            for i, fp in enumerate(footprints):
+                fd = compute_facade_definition(
+                    fp, i, footprints,
+                    block_vertices=self.block_vertices,
+                    building_heights=building_heights,
+                )
+                facade_definitions.append(fd)
+
             if use_full_details and buildings_visible:
                 # Generate individual buildings with full details (doors, windows, etc.)
-                # Each building gets a unique seed and params derived from it
+                # Params already generated above
                 self.renderer.render_block_outline(self.block_vertices)
                 courtyard_color = (0.35, 0.4, 0.35, 0.5)
                 z_base = 0.01
+                buildings_list = [None] * len(footprints)
                 for i, footprint in enumerate(footprints):
                     num_floors = floor_counts[i] if i < len(floor_counts) else 0
                     if num_floors > 0:
                         building_seed = _building_seed(seed, i, footprint)
-                        params = generate_building_params(building_seed)
+                        params = dict(building_params_list[i])  # copy, we may pop
                         floors_data = [footprint] * num_floors
-                        building_floor_height = params.pop("floor_height")
+                        building_floor_height = params.pop("floor_height", floor_height)
                         floor_heights = [building_floor_height] * num_floors
                         building = Building(
                             floors=floors_data,
                             seed=building_seed,
                             floor_heights=floor_heights,
+                            facade_definition=facade_definitions[i],
                         )
+                        buildings_list[i] = building
                         self.building_renderer.render_building(
                             building, params
                         )
@@ -450,13 +507,55 @@ class BlockViewer:
                         self.renderer.render_footprint_flat(
                             footprint, courtyard_color, z_base
                         )
-            elif buildings_visible:
+                # Block-level stairs: doors above occlusion
+                stairs = collect_stairs_from_buildings(
+                    buildings_list,
+                    footprints,
+                    facade_definitions,
+                    building_heights,
+                    building_params_list=building_params_list,
+                )
+                self.renderer.render_stairs(stairs)
+
+            # Render facade segment colors
+            if buildings_visible:
+                for i, footprint in enumerate(footprints):
+                    if i >= len(facade_definitions):
+                        continue
+                    num_floors = floor_counts[i] if i < len(floor_counts) else 0
+                    if use_full_details and num_floors > 0:
+                        # Full details: ground-level only
+                        self.renderer.render_footprint_facade_segments(
+                            footprint, facade_definitions[i], z=0.02
+                        )
+                    elif not use_full_details and num_floors > 0:
+                        # Non-full details: per-floor segments (with occlusion_height)
+                        fh = building_floor_heights[i] if i < len(building_floor_heights) else floor_height
+                        for floor_idx in range(num_floors):
+                            fz_base = floor_idx * fh
+                            fz_top = (floor_idx + 1) * fh
+                            z_line = fz_base + 0.01
+                            self.renderer.render_footprint_facade_segments(
+                                footprint,
+                                facade_definitions[i],
+                                z=z_line,
+                                floor_z_base=fz_base,
+                                floor_z_top=fz_top,
+                            )
+                    else:
+                        # Courtyards: ground-level only
+                        self.renderer.render_footprint_facade_segments(
+                            footprint, facade_definitions[i], z=0.02
+                        )
+
+            if not use_full_details and buildings_visible:
                 self.renderer.render_block(
                     self.block_vertices,
                     footprints,
                     show_3d=self.show_3d_cb.checked,
                     floor_height=floor_height,
                     floor_counts=floor_counts,
+                    floor_heights=building_floor_heights,
                 )
             else:
                 # Buildings hidden - still show block outline
