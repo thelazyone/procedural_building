@@ -73,6 +73,10 @@ class Building:
         self._cumulative_heights = [0.0]
         for floor in self.floors:
             self._cumulative_heights.append(self._cumulative_heights[-1] + floor.height)
+
+        # Roof parameters (affects total height, occlusion, stairs)
+        self.roof_height = params.get("roof_height", 0.5)
+        self.roof_protrusion = params.get("roof_protrusion", 0.3)
         
         # Lazy caches
         self._walls: Optional[List] = None
@@ -96,8 +100,8 @@ class Building:
         return self._cumulative_heights[floor_idx + 1]
     
     def get_total_height(self) -> float:
-        """Get total building height in meters."""
-        return self._cumulative_heights[-1]
+        """Get total building height in meters (floors + roof)."""
+        return self._cumulative_heights[-1] + self.roof_height
     
     def get_walls(self, **params) -> List:
         """

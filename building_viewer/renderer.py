@@ -14,6 +14,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from building import Building
+from building.roof import compute_roof_vertices
 from core.footprint import Point2D
 
 
@@ -472,31 +473,83 @@ class BuildingRenderer:
 
             # Render roof on top floor
             if self.show_roof and floor_idx == building.num_floors - 1:
-                z_roof = building.get_floor_z_top(floor_idx)
-                self.render_roof(vertices, z_roof)
+                z_base = building.get_floor_z_top(floor_idx)
+                z_top = z_base + building.roof_height
+                self.render_roof(
+                    vertices,
+                    z_base,
+                    z_top,
+                    building.facade_definition,
+                    building.roof_protrusion,
+                )
 
-    def render_roof(self, vertices: List[Point2D], z: float):
+    def render_roof(
+        self,
+        footprint_vertices: List[Point2D],
+        z_base: float,
+        z_top: float,
+        facade_definition,
+        protrusion: float,
+    ):
         """
-        Render a flat roof as a polygon at the top of the building.
+        Render roof as a simple prism (flat top, vertical sides).
+
+        Protrusion applies on front facades only; back and occluded edges stay flush.
+        The roof is a vertical extrusion of the roof outline (no sloped sides).
 
         Args:
-            vertices: Footprint vertices (top floor outline)
-            z: Z height of the roof
+            footprint_vertices: Base footprint (top floor outline)
+            z_base: Z of roof base (top of top floor)
+            z_top: Z of roof top (z_base + roof_height)
+            facade_definition: For determining which edges protrude
+            protrusion: Outward offset on front edges (meters)
         """
-        if not self.show_roof or not vertices:
+        if not self.show_roof or not footprint_vertices:
             return
 
+        roof_vertices = compute_roof_vertices(
+            footprint_vertices, facade_definition, protrusion
+        )
+        n = len(roof_vertices)
+
+        # Top face
         glColor4f(*self.roof_color)
         glBegin(GL_POLYGON)
-        for x, y in vertices:
-            glVertex3f(x, y, z)
+        for x, y in roof_vertices:
+            glVertex3f(x, y, z_top)
         glEnd()
+
+        # Bottom face (roof base - same outline as top, vertical prism)
+        glBegin(GL_POLYGON)
+        for x, y in roof_vertices:
+            glVertex3f(x, y, z_base)
+        glEnd()
+
+        # Sides (vertical quads) - skip when roof has no height
+        if z_top > z_base:
+            side_color = (
+                self.roof_color[0] * 0.9,
+                self.roof_color[1] * 0.9,
+                self.roof_color[2] * 0.9,
+                self.roof_color[3],
+            )
+            glColor4f(*side_color)
+            for i in range(n):
+                i_next = (i + 1) % n
+                x1, y1 = roof_vertices[i]
+                x2, y2 = roof_vertices[i_next]
+                glBegin(GL_QUADS)
+                glVertex3f(x1, y1, z_base)
+                glVertex3f(x2, y2, z_base)
+                glVertex3f(x2, y2, z_top)
+                glVertex3f(x1, y1, z_top)
+                glEnd()
 
         glLineWidth(1.5)
         glColor4f(0.4, 0.4, 0.35, 1.0)
         glBegin(GL_LINE_LOOP)
-        for x, y in vertices:
-            glVertex3f(x, y, z)
+        for x, y in roof_vertices:
+            glVertex3f(x, y, z_top)
         glEnd()
         glLineWidth(1.0)
 

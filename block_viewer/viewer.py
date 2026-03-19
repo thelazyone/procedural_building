@@ -451,8 +451,10 @@ class BlockViewer:
 
             # Pre-generate building params for ALL buildings first (deterministic metadata)
             # This gives per-building floor_height for cubes, facade, occlusion_height
+            # building_heights includes roof (affects occlusion, stairs)
             building_params_list = []
             building_floor_heights = []
+            building_roof_heights = []
             building_heights = []
             for i, footprint in enumerate(footprints):
                 num_floors = floor_counts[i] if i < len(floor_counts) else 0
@@ -461,11 +463,14 @@ class BlockViewer:
                     params = generate_building_params(building_seed)
                     building_params_list.append(params)
                     fh = params.get("floor_height", floor_height)
+                    roof_h = params.get("roof_height", 0.5)
                     building_floor_heights.append(fh)
-                    building_heights.append(num_floors * fh)
+                    building_roof_heights.append(roof_h)
+                    building_heights.append(num_floors * fh + roof_h)
                 else:
                     building_params_list.append(None)
                     building_floor_heights.append(0.0)
+                    building_roof_heights.append(0.0)
                     building_heights.append(0.0)
 
             # Compute facade definitions (with occlusion_height from adjacent buildings)
@@ -498,6 +503,7 @@ class BlockViewer:
                             seed=building_seed,
                             floor_heights=floor_heights,
                             facade_definition=facade_definitions[i],
+                            **params,
                         )
                         buildings_list[i] = building
                         self.building_renderer.render_building(
@@ -556,6 +562,7 @@ class BlockViewer:
                     floor_height=floor_height,
                     floor_counts=floor_counts,
                     floor_heights=building_floor_heights,
+                    roof_heights=building_roof_heights,
                 )
             else:
                 # Buildings hidden - still show block outline

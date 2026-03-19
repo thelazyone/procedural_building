@@ -20,6 +20,8 @@ PARAM_RANGES = {
     "corner_size": (0.1, 0.25),
     "wall_offset": (0.03, 0.08),
     "edge_spacing": (0.8, 1.2),
+    "roof_protrusion": (0.2, 0.8),   # How much roof extends on front facades only (meters)
+    "roof_height": (0.3, 1.2),       # Roof prism height on top of building (meters)
 }
 
 
@@ -44,6 +46,8 @@ def generate_building_params(seed: int) -> Dict[str, Any]:
         - corner_size: Corner element size in meters
         - wall_offset: Wall inward offset in meters
         - edge_spacing: Min spacing from edges for placement
+        - roof_protrusion: Roof overhang on front facades only (meters)
+        - roof_height: Roof prism height on top of building (meters)
     """
     rng = random.Random(seed)
     params = {}

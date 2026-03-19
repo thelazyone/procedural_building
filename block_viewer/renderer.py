@@ -365,6 +365,7 @@ class BlockRenderer:
         floor_height: float = 3.0,
         floor_counts: List[int] = None,
         floor_heights: Optional[List[float]] = None,
+        roof_heights: Optional[List[float]] = None,
     ):
         """
         Render block and all subdivided footprints.
@@ -377,6 +378,7 @@ class BlockRenderer:
             floor_counts: Floor count per footprint (0 = no building, courtyard)
             floor_heights: Per-building floor height in meters. When provided,
                 each building uses its own floor height for extrusion.
+            roof_heights: Per-building roof height in meters. Added to total height.
         """
         # Block outline
         self.render_block_outline(block_vertices)
@@ -393,8 +395,13 @@ class BlockRenderer:
                 if floor_heights and i < len(floor_heights)
                 else floor_height
             )
+            roof_h = (
+                roof_heights[i]
+                if roof_heights and i < len(roof_heights)
+                else 0.5
+            )
             if show_3d and num_floors > 0:
-                building_height = fh * num_floors
+                building_height = fh * num_floors + roof_h
                 self.render_footprint_extruded(
                     footprint, color, z_base, building_height
                 )
