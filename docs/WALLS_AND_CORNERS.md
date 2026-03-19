@@ -9,15 +9,7 @@ Walls and corners are now rendered in the debug viewer to provide a more complet
 ### Rendering
 - Walls are rendered as vertical rectangles between footprint edge vertices
 - Each wall spans from floor base to floor top (z_base to z_base + floor_height)
-- **Wall Offset**: Walls are offset slightly inward to make doors and windows more visible from outside
-
-### Parameters
-
-**wall_offset** (default: 0.05m)
-- Distance to offset walls inward from the footprint edge
-- Exposed in UI as "Wall Offset"
-- Typical range: 0.01m - 0.15m
-- Allows windows and doors to be visible from outside the building
+- **Walls are flush with the footprint** (no offset) - windows and doors align correctly
 
 ### Colors
 - **Wall color**: Light gray/beige (0.7, 0.7, 0.65, 0.9)
@@ -29,7 +21,7 @@ Walls and corners are now rendered in the debug viewer to provide a more complet
 - Corners are rendered at each vertex where two walls meet
 - **Two perpendicular rectangles** per corner (not four)
 - Each rectangle extends along one of the two adjacent edges
-- Corners respect the same wall_offset as walls
+- Corners use a small fixed inset for visual depth
 
 ### Why Only Two Faces?
 
@@ -100,21 +92,8 @@ This ensures elements are properly layered for clear visualization.
 
 ## Implementation Notes
 
-### Wall Offset Calculation
-```python
-# Calculate inward normal (perpendicular to edge)
-dx = x2 - x1
-dy = y2 - y1
-length = sqrt(dx*dx + dy*dy)
-
-# Rotate 90 degrees counterclockwise for CCW polygons
-normal_x = -dy / length
-normal_y = dx / length
-
-# Offset inward
-x_offset = x + normal_x * wall_offset
-y_offset = y + normal_y * wall_offset
-```
+### Wall Placement
+Walls are drawn exactly on the footprint edge (no offset). Windows and doors use a small fixed offset (2cm) from the wall surface for visibility and to avoid z-fighting.
 
 ### Corner Placement
 Corners use the **average of adjacent edge normals** to determine their inward offset, ensuring corners stay properly positioned even at sharp angles.

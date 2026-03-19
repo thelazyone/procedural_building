@@ -18,9 +18,8 @@ PARAM_RANGES = {
     "front_window_density_mult": (1.5, 2.1),  # Avg 1.8 - tighter spacing = more windows
     "back_window_density_mult": (1.0, 1.4),   # Avg 1.2 - looser spacing = fewer windows
     "corner_size": (0.1, 0.25),
-    "wall_offset": (0.03, 0.08),
     "edge_spacing": (0.8, 1.2),
-    "roof_protrusion": (0.2, 0.8),   # How much roof extends on front facades only (meters)
+    "roof_protrusion": (0.0, 0.2),   # How much roof extends on front facades only (meters)
     "roof_height": (0.3, 1.2),       # Roof prism height on top of building (meters)
 }
 
@@ -44,7 +43,6 @@ def generate_building_params(seed: int) -> Dict[str, Any]:
         - front_window_density_mult: Front facade slot spacing multiplier (avg 1.8)
         - back_window_density_mult: Back facade slot spacing multiplier (avg 1.2)
         - corner_size: Corner element size in meters
-        - wall_offset: Wall inward offset in meters
         - edge_spacing: Min spacing from edges for placement
         - roof_protrusion: Roof overhang on front facades only (meters)
         - roof_height: Roof prism height on top of building (meters)

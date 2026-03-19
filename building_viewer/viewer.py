@@ -145,9 +145,9 @@ class BuildingViewer:
         self.ui_elements.append(self.floor_band_input)
         y += 35
 
-        # Wall Offset
+        # Wall Offset (legacy - walls are now flush with footprint)
         self.ui_elements.append(Label((10, y + 5), "Wall Offset:", 20))
-        self.wall_offset_input = TextInput(pygame.Rect(100, y, 190, 30), "0.05")
+        self.wall_offset_input = TextInput(pygame.Rect(100, y, 190, 30), "0")
         self.ui_elements.append(self.wall_offset_input)
         y += 35
 
@@ -379,7 +379,7 @@ class BuildingViewer:
             try:
                 wall_offset = float(self.wall_offset_input.text)
             except (ValueError, AttributeError):
-                wall_offset = 0.05
+                wall_offset = 0.0
 
             generation_params = {
                 'door_density': door_density,

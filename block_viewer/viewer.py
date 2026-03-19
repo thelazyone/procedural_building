@@ -193,16 +193,6 @@ class BlockViewer:
         self.ui_elements.append(self.min_area_input)
         y += 35
 
-        self.ui_elements.append(Label((10, y + 5), "No Divide %:", 20))
-        self.chance_no_divide_input = TextInput(pygame.Rect(100, y, 190, 30), "0.05")
-        self.ui_elements.append(self.chance_no_divide_input)
-        y += 35
-
-        self.ui_elements.append(Label((10, y + 5), "Floor height:", 20))
-        self.floor_height_input = TextInput(pygame.Rect(100, y, 190, 30), "3.0")
-        self.ui_elements.append(self.floor_height_input)
-        y += 35
-
         self.ui_elements.append(Label((10, y + 5), "Avg floors:", 20))
         self.avg_floors_input = TextInput(pygame.Rect(100, y, 190, 30), "5")
         self.ui_elements.append(self.avg_floors_input)
@@ -306,17 +296,11 @@ class BlockViewer:
             min_area = 50.0
             self.min_area_input.text = str(min_area)
 
-        try:
-            chance_no_divide = float(self.chance_no_divide_input.text)
-        except ValueError:
-            chance_no_divide = 0.05
-            self.chance_no_divide_input.text = str(chance_no_divide)
-
         footprint_vertices_list = subdivide_block(
             block_vertices,
             seed=seed,
             min_area=min_area,
-            chance_no_divide=chance_no_divide,
+            chance_no_divide=0.05,  # Param only, not in GUI
         )
 
         self.block_vertices = block_vertices
@@ -423,10 +407,7 @@ class BlockViewer:
                 facade_noise=facade_noise,
                 block_vertices=self.block_vertices,
             )
-            try:
-                floor_height = float(self.floor_height_input.text)
-            except (ValueError, AttributeError):
-                floor_height = 3.0
+            # floor_height is per-building from params (generate_building_params)
             try:
                 avg_floors = float(self.avg_floors_input.text)
             except (ValueError, AttributeError):
@@ -462,7 +443,7 @@ class BlockViewer:
                     building_seed = _building_seed(seed, i, footprint)
                     params = generate_building_params(building_seed)
                     building_params_list.append(params)
-                    fh = params.get("floor_height", floor_height)
+                    fh = params.get("floor_height", 3.0)
                     roof_h = params.get("roof_height", 0.5)
                     building_floor_heights.append(fh)
                     building_roof_heights.append(roof_h)
@@ -496,7 +477,7 @@ class BlockViewer:
                         building_seed = _building_seed(seed, i, footprint)
                         params = dict(building_params_list[i])  # copy, we may pop
                         floors_data = [footprint] * num_floors
-                        building_floor_height = params.pop("floor_height", floor_height)
+                        building_floor_height = params.pop("floor_height", 3.0)
                         floor_heights = [building_floor_height] * num_floors
                         building = Building(
                             floors=floors_data,
@@ -536,7 +517,7 @@ class BlockViewer:
                         )
                     elif not use_full_details and num_floors > 0:
                         # Non-full details: per-floor segments (with occlusion_height)
-                        fh = building_floor_heights[i] if i < len(building_floor_heights) else floor_height
+                        fh = building_floor_heights[i] if i < len(building_floor_heights) else 3.0
                         for floor_idx in range(num_floors):
                             fz_base = floor_idx * fh
                             fz_top = (floor_idx + 1) * fh
@@ -559,7 +540,7 @@ class BlockViewer:
                     self.block_vertices,
                     footprints,
                     show_3d=self.show_3d_cb.checked,
-                    floor_height=floor_height,
+                    floor_height=3.0,  # Fallback only; per-building from building_floor_heights
                     floor_counts=floor_counts,
                     floor_heights=building_floor_heights,
                     roof_heights=building_roof_heights,

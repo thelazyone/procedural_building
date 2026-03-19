@@ -120,14 +120,14 @@ class BuildingRenderer:
         glEnd()
         glLineWidth(1.0)
 
-    def render_door(self, door, z_base: float, wall_offset: float = 0.05):
+    def render_door(self, door, z_base: float, wall_offset: float = 0.0):
         """
         Render a door as a vertical rectangle.
 
         Args:
             door: Door object with position and properties
             z_base: Base Z height of the floor
-            wall_offset: Wall inward offset - doors are translated outward past the wall
+            wall_offset: Unused (kept for API compatibility)
         """
         if not self.show_doors:
             return
@@ -146,8 +146,8 @@ class BuildingRenderer:
         width_x = -facing_y
         width_y = facing_x
 
-        # Translate door outward past the wall surface (wall is offset inward by wall_offset)
-        outward_offset = wall_offset + 0.05  # Past wall + 5cm for visibility
+        # Slight outward offset for visibility (walls are flush with footprint)
+        outward_offset = 0.02  # 2cm to avoid z-fighting with wall
         x_inset = x + facing_x * outward_offset
         y_inset = y + facing_y * outward_offset
 
@@ -223,16 +223,18 @@ class BuildingRenderer:
             glEnd()
             glLineWidth(1.0)
 
-    def render_wall(self, edge_start, edge_end, z_base: float, floor_height: float, wall_offset: float = 0.05):
+    def render_wall(self, edge_start, edge_end, z_base: float, floor_height: float, wall_offset: float = 0.0):
         """
         Render a wall as a vertical rectangle between two points.
+
+        Walls are drawn exactly on the footprint edge (no offset).
 
         Args:
             edge_start: (x, y) start point of wall
             edge_end: (x, y) end point of wall
             z_base: Base Z height of the floor
             floor_height: Height of the floor
-            wall_offset: Distance to offset wall inward (meters)
+            wall_offset: Unused (kept for API compatibility)
         """
         if not self.show_walls:
             return
@@ -240,37 +242,23 @@ class BuildingRenderer:
         x1, y1 = edge_start
         x2, y2 = edge_end
 
-        # Calculate inward normal (perpendicular to edge, pointing inward)
-        dx = x2 - x1
-        dy = y2 - y1
-        length = (dx * dx + dy * dy) ** 0.5
+        length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
         if length < 0.001:
             return  # Skip degenerate edges
-
-        # Perpendicular vector (rotated 90 degrees counterclockwise)
-        # This points to the left of the edge direction (inward for CCW polygons)
-        normal_x = -dy / length
-        normal_y = dx / length
-
-        # Offset wall inward
-        x1_offset = x1 + normal_x * wall_offset
-        y1_offset = y1 + normal_y * wall_offset
-        x2_offset = x2 + normal_x * wall_offset
-        y2_offset = y2 + normal_y * wall_offset
 
         z_bottom = z_base
         z_top = z_base + floor_height
 
-        # Use helper function to render
+        # Use helper function to render (walls flush with footprint)
         self.render_vertical_rectangle(
-            x1_offset, y1_offset, x2_offset, y2_offset,
+            x1, y1, x2, y2,
             z_bottom, z_top,
             self.wall_color,
             outline_color=(0.4, 0.4, 0.35, 1.0),
             outline_width=1.0
         )
 
-    def render_corner(self, corner, z_base: float, floor_height: float):
+    def render_corner(self, corner, z_base: float, floor_height: float, wall_offset: float = 0.0):
         """
         Render a corner as two flat rectangles on the wall surface at each corner vertex.
 
@@ -280,7 +268,7 @@ class BuildingRenderer:
         - Both span full floor height
         - Both are flat on the wall surface (like windows)
 
-        Corners have a fixed small inset (like windows/doors), independent of wall_offset.
+        Corners use a small inset for visual depth.
 
         Args:
             corner: Corner object with position and properties
@@ -323,8 +311,7 @@ class BuildingRenderer:
         normal_next_x = -dy_next
         normal_next_y = dx_next
 
-        # Fixed small inset (like windows/doors) - independent of wall_offset
-        corner_inset = 0.02  # 2cm inset from wall surface
+        corner_inset = 0.02  # 2cm inset for visual depth
 
         # Offset the corner vertex inward (use average normal)
         avg_normal_x = (normal_prev_x + normal_next_x)
@@ -357,14 +344,14 @@ class BuildingRenderer:
             self.corner_color
         )
 
-    def render_window(self, window, z_base: float, wall_offset: float = 0.05):
+    def render_window(self, window, z_base: float, wall_offset: float = 0.0):
         """
         Render a window as a vertical rectangle.
 
         Args:
             window: Window object with position and properties
             z_base: Base Z height of the floor
-            wall_offset: Wall inward offset - windows are translated outward past the wall
+            wall_offset: Unused (kept for API compatibility)
         """
         if not self.show_windows:
             return
@@ -384,8 +371,8 @@ class BuildingRenderer:
         width_x = -facing_y
         width_y = facing_x
 
-        # Translate window outward past the wall surface (wall is offset inward by wall_offset)
-        outward_offset = wall_offset + 0.03  # Past wall + 3cm for visibility
+        # Slight outward offset for visibility (walls are flush with footprint)
+        outward_offset = 0.02  # 2cm to avoid z-fighting with wall
         x_inset = x + facing_x * outward_offset
         y_inset = y + facing_y * outward_offset
 
@@ -432,8 +419,8 @@ class BuildingRenderer:
 
             vertices = floor.footprint.get_vertices()
 
-            # Get wall_offset from generation_params
-            wall_offset = generation_params.get('wall_offset', 0.05) if generation_params else 0.05
+            # wall_offset kept for API compatibility (walls are now flush with footprint)
+            wall_offset = generation_params.get('wall_offset', 0.0) if generation_params else 0.0
 
             # Render walls for this floor
             if self.show_walls:
