@@ -23,7 +23,6 @@ from typing import List, Tuple
 
 from blocks.subdivide import subdivide_block
 from blocks.filter_internal import filter_footprints_touching_block
-from blocks.split_concave import split_concave_footprints
 from blocks.gap import apply_gaps
 from blocks.facade_noise import apply_facade_noise
 from blocks.facade_from_block import compute_facade_definition
@@ -99,6 +98,8 @@ class BlockViewer:
 
         self.block_vertices = None
         self.footprint_vertices_list = []
+        self._subdivide_cache_key = None
+        self._user_cleared_block = False
         self.block_templates = self._create_templates()
 
         self.ui_elements = []
@@ -265,23 +266,31 @@ class BlockViewer:
         self.ui_elements.append(self.grid_cb)
         y += 50
 
-        self.ui_elements.append(Label((10, y), "Facade (z=0):", 22))
+        self.ui_elements.append(Label((10, y), "Facade edges:", 22))
         y += 28
+        self.ui_elements.append(
+            Label((10, y), "Ground always; upper floors if 3D on", 14)
+        )
+        y += 22
         self.ui_elements.append(Label((10, y), "Blue=front, Orange=occlusion, Gray=back", 14))
 
         self.selected_block = block_names[0]
         self._load_block(block_names[0])
 
-    def _load_block(self, block_name: str):
-        """Load and subdivide block."""
-        if block_name not in self.block_templates:
+    def _sync_block_subdivision(self, force: bool = False) -> None:
+        """
+        Recompute building lots from the current template + seed + min area.
+
+        Runs each frame when (block, seed, min_area) change so the seed field
+        takes effect without pressing Reload. Use force=True after picking a
+        block or Reload to always re-run subdivision.
+        """
+        if getattr(self, "_user_cleared_block", False):
+            return
+        if not self.selected_block or self.selected_block not in self.block_templates:
             return
 
-        self.selected_block = block_name
-        for radio in self.radio_buttons:
-            radio.selected = (radio.text == block_name)
-
-        template = self.block_templates[block_name]
+        template = self.block_templates[self.selected_block]
         block_vertices = template["vertices"]
 
         try:
@@ -296,29 +305,47 @@ class BlockViewer:
             min_area = 50.0
             self.min_area_input.text = str(min_area)
 
-        footprint_vertices_list = subdivide_block(
+        key = (self.selected_block, seed, min_area)
+        if not force and key == getattr(self, "_subdivide_cache_key", None):
+            self.block_vertices = block_vertices
+            return
+
+        self.footprint_vertices_list = subdivide_block(
             block_vertices,
             seed=seed,
             min_area=min_area,
-            chance_no_divide=0.05,  # Param only, not in GUI
+            chance_no_divide=0.05,
+        )
+        self._subdivide_cache_key = key
+        self.block_vertices = block_vertices
+        print(
+            f"Subdivided {self.selected_block} seed={seed} min_area={min_area} "
+            f"-> {len(self.footprint_vertices_list)} lots"
         )
 
-        self.block_vertices = block_vertices
-        self.footprint_vertices_list = footprint_vertices_list
+    def _load_block(self, block_name: str):
+        """Select block template and subdivide."""
+        if block_name not in self.block_templates:
+            return
 
-        print(f"Loaded {block_name} with seed {seed}")
-        print(f"  Block vertices: {len(block_vertices)}")
-        print(f"  Building footprints: {len(footprint_vertices_list)}")
+        self.selected_block = block_name
+        self._user_cleared_block = False
+        for radio in self.radio_buttons:
+            radio.selected = (radio.text == block_name)
+
+        self._sync_block_subdivision(force=True)
 
     def _reload_block(self):
-        """Reload current block with new parameters."""
+        """Force subdivision with current seed / min area (same as re-selecting block)."""
         if self.selected_block:
-            self._load_block(self.selected_block)
+            self._sync_block_subdivision(force=True)
 
     def _clear_block(self):
         """Clear current block."""
         self.block_vertices = None
         self.footprint_vertices_list = []
+        self._subdivide_cache_key = None
+        self._user_cleared_block = True
         print("Block cleared")
 
     def _handle_events(self):
@@ -370,13 +397,14 @@ class BlockViewer:
         glEnable(GL_DEPTH_TEST)
         self.renderer.render_grid()
 
+        self._sync_block_subdivision(force=False)
+
         if self.block_vertices is not None and self.footprint_vertices_list is not None:
             footprints = self.footprint_vertices_list
             if self.remove_internal_cb.checked:
                 footprints = filter_footprints_touching_block(
                     self.block_vertices, footprints
                 )
-            footprints = split_concave_footprints(footprints)
             try:
                 gap_chance = float(self.gap_chance_input.text)
             except (ValueError, AttributeError):
@@ -516,9 +544,12 @@ class BlockViewer:
                             footprint, facade_definitions[i], z=0.02
                         )
                     elif not use_full_details and num_floors > 0:
-                        # Non-full details: per-floor segments (with occlusion_height)
+                        # Ground floor always; upper floors only when extruded 3D is shown
                         fh = building_floor_heights[i] if i < len(building_floor_heights) else 3.0
-                        for floor_idx in range(num_floors):
+                        max_floor = (
+                            num_floors if self.show_3d_cb.checked else 1
+                        )
+                        for floor_idx in range(max_floor):
                             fz_base = floor_idx * fh
                             fz_top = (floor_idx + 1) * fh
                             z_line = fz_base + 0.01
@@ -579,7 +610,7 @@ class BlockViewer:
         print("  - Left mouse drag: Rotate camera")
         print("  - Middle mouse drag: Pan view")
         print("  - Mouse wheel: Zoom in/out")
-        print("  - Reload: Apply new seed/parameters")
+        print("  - Seed / Min area: apply automatically; Reload forces re-subdivide")
         print()
 
         while self.running:

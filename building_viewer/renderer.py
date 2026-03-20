@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from building import Building
 from building.roof import compute_roof_vertices
 from core.footprint import Point2D
+from core.triangulation import triangulate_simple_polygon
 
 
 class BuildingRenderer:
@@ -104,12 +105,14 @@ class BuildingRenderer:
         if not self.show_footprints:
             return
 
-        # Render bottom face
+        # GL_POLYGON is only valid for convex outlines; concave (e.g. L) needs real triangulation.
         glColor4f(*self.footprint_color)
-        glBegin(GL_POLYGON)
-        for x, y in vertices:
-            glVertex3f(x, y, z_base)
-        glEnd()
+        for v0, v1, v2 in triangulate_simple_polygon(vertices):
+            glBegin(GL_TRIANGLES)
+            glVertex3f(v0[0], v0[1], z_base)
+            glVertex3f(v1[0], v1[1], z_base)
+            glVertex3f(v2[0], v2[1], z_base)
+            glEnd()
 
         # Render outline
         glLineWidth(2.0)
@@ -499,18 +502,22 @@ class BuildingRenderer:
         )
         n = len(roof_vertices)
 
-        # Top face
+        # Top / bottom caps (concave-safe; GL_POLYGON breaks on L-shaped roofs)
         glColor4f(*self.roof_color)
-        glBegin(GL_POLYGON)
-        for x, y in roof_vertices:
-            glVertex3f(x, y, z_top)
-        glEnd()
+        for v0, v1, v2 in triangulate_simple_polygon(roof_vertices):
+            glBegin(GL_TRIANGLES)
+            glVertex3f(v0[0], v0[1], z_top)
+            glVertex3f(v1[0], v1[1], z_top)
+            glVertex3f(v2[0], v2[1], z_top)
+            glEnd()
 
-        # Bottom face (roof base - same outline as top, vertical prism)
-        glBegin(GL_POLYGON)
-        for x, y in roof_vertices:
-            glVertex3f(x, y, z_base)
-        glEnd()
+        rev = list(reversed(roof_vertices))
+        for v0, v1, v2 in triangulate_simple_polygon(rev):
+            glBegin(GL_TRIANGLES)
+            glVertex3f(v0[0], v0[1], z_base)
+            glVertex3f(v1[0], v1[1], z_base)
+            glVertex3f(v2[0], v2[1], z_base)
+            glEnd()
 
         # Sides (vertical quads) - skip when roof has no height
         if z_top > z_base:

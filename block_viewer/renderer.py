@@ -2,7 +2,7 @@
 3D renderer for block and footprint visualization.
 
 Renders block outline and subdivided building footprints.
-Footprints are convex (concave ones split in pipeline). Triangle fan for fill.
+Simple polygons may be concave; fills use Shapely constrained Delaunay triangulation.
 """
 
 from typing import List, Tuple, Optional
@@ -11,24 +11,11 @@ from OpenGL.GLU import *
 
 from core.footprint import Point2D
 from core.facade import FacadeDefinition, FacadeSegmentKind
+from core.triangulation import triangulate_simple_polygon
 
 # Stair rendering
 STAIR_COLOR = (0.5, 0.45, 0.4, 0.9)  # Wood/concrete ramp
 STAIR_RAMP_WIDTH = 1.2  # meters, door-like width
-
-
-def _triangulate_polygon(vertices: List[Point2D]) -> List[Tuple[Point2D, Point2D, Point2D]]:
-    """Triangulate a convex polygon using a triangle fan."""
-    n = len(vertices)
-    if n < 3:
-        return []
-    if n == 3:
-        return [(vertices[0], vertices[1], vertices[2])]
-    triangles = []
-    v0 = vertices[0]
-    for i in range(1, n - 1):
-        triangles.append((v0, vertices[i], vertices[i + 1]))
-    return triangles
 
 
 # Consistent colors for facade segment kinds (same across all buildings)
@@ -125,7 +112,7 @@ class BlockRenderer:
         if not self.show_footprints or not vertices:
             return
         glColor4f(*color)
-        for v0, v1, v2 in _triangulate_polygon(vertices):
+        for v0, v1, v2 in triangulate_simple_polygon(vertices):
             glBegin(GL_TRIANGLES)
             glVertex3f(v0[0], v0[1], z)
             glVertex3f(v1[0], v1[1], z)
@@ -217,7 +204,7 @@ class BlockRenderer:
             color[3],
         )
         glColor4f(*top_color)
-        for v0, v1, v2 in _triangulate_polygon(vertices):
+        for v0, v1, v2 in triangulate_simple_polygon(vertices):
             glBegin(GL_TRIANGLES)
             glVertex3f(v0[0], v0[1], z_top)
             glVertex3f(v1[0], v1[1], z_top)
@@ -226,7 +213,7 @@ class BlockRenderer:
 
         glColor4f(*color)
         rev = list(reversed(vertices))
-        for v0, v1, v2 in _triangulate_polygon(rev):
+        for v0, v1, v2 in triangulate_simple_polygon(rev):
             glBegin(GL_TRIANGLES)
             glVertex3f(v0[0], v0[1], z_base)
             glVertex3f(v1[0], v1[1], z_base)

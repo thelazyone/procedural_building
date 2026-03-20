@@ -2,17 +2,106 @@
 Block subdivision using recursive longest-edge bisection.
 
 Splits a block polygon into building footprints.
-Algorithm: find longest edge, split with perpendicular line through random point (40-60%),
-recurse until stopping conditions.
+Algorithm: pick a split edge among the near-longest edges (seed-weighted by length),
+split with a perpendicular through a random point along that edge, recurse.
+
+Pure longest-edge + a tight split band (40–60%) made the first cuts almost
+shape-determined; edge pool + wider t range keeps lots balanced but varies with seed.
 """
 
 import random
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from shapely.geometry import Polygon, LineString
+from shapely import is_valid, make_valid
 from shapely.ops import split
 
 from core.footprint import Point2D
+
+# Edges with length >= EDGE_POOL_RATIO * max_length are candidates for the split line.
+# <1.0 lets equivalent long sides (e.g. both long sides of a rectangle) compete by seed.
+EDGE_POOL_RATIO = 0.82
+
+# Split point along chosen edge: uniform in [SPLIT_T_LO, SPLIT_T_HI] (avoid vertices).
+SPLIT_T_LO = 0.12
+SPLIT_T_HI = 0.88
+
+
+def _pick_edge_index_weighted(
+    coords: List[Point2D],
+    rng: random.Random,
+) -> Optional[Tuple[int, float]]:
+    """
+    Choose edge index to split along: pool of near-longest edges, weighted by length.
+
+    Returns (edge_start_index, edge_length) or None if degenerate.
+    """
+    n = len(coords)
+    if n < 3:
+        return None
+    lengths: List[Tuple[int, float]] = []
+    max_len = 0.0
+    for i in range(n):
+        p1 = coords[i]
+        p2 = coords[(i + 1) % n]
+        dx = p2[0] - p1[0]
+        dy = p2[1] - p1[1]
+        L = (dx * dx + dy * dy) ** 0.5
+        if L > 1e-9:
+            lengths.append((i, L))
+            if L > max_len:
+                max_len = L
+    if not lengths or max_len < 1e-6:
+        return None
+    threshold = max_len * EDGE_POOL_RATIO
+    candidates = [(i, L) for i, L in lengths if L >= threshold]
+    if not candidates:
+        candidates = lengths
+    total_w = sum(L for _, L in candidates)
+    if total_w < 1e-12:
+        return None
+    r = rng.uniform(0.0, total_w)
+    acc = 0.0
+    for i, L in candidates:
+        acc += L
+        if r <= acc:
+            return (i, L)
+    return (candidates[-1][0], candidates[-1][1])
+
+
+def _as_single_polygon(geom) -> Optional[Polygon]:
+    """Reduce to one Polygon for exterior-based splitting (largest part if MultiPolygon)."""
+    if geom is None or geom.is_empty:
+        return None
+    if geom.geom_type == "Polygon":
+        return geom
+    if geom.geom_type == "MultiPolygon":
+        return max(geom.geoms, key=lambda p: p.area, default=None)
+    if geom.geom_type == "GeometryCollection":
+        polys = [g for g in geom.geoms if g.geom_type == "Polygon" and not g.is_empty]
+        if not polys:
+            return None
+        return max(polys, key=lambda p: p.area)
+    return None
+
+
+def _exterior_ring(poly: Polygon) -> List[Point2D]:
+    """Exterior vertices only; fix invalid geometry from split operations."""
+    if not is_valid(poly):
+        fixed = make_valid(poly)
+        if fixed.is_empty:
+            return []
+        if fixed.geom_type == "Polygon":
+            poly = fixed
+        elif fixed.geom_type == "MultiPolygon":
+            poly = max(fixed.geoms, key=lambda p: p.area, default=None)
+            if poly is None or poly.is_empty:
+                return []
+        else:
+            return []
+    if poly.is_empty:
+        return []
+    return list(poly.exterior.coords[:-1])
 
 
 def subdivide_block(
@@ -37,13 +126,14 @@ def subdivide_block(
     polygon = Polygon(vertices)
     if not polygon.is_valid:
         polygon = polygon.buffer(0)  # Fix invalid polygon
-    if polygon.is_empty or polygon.area < 0.5 * min_area:
+    polygon = _as_single_polygon(polygon)
+    if polygon is None or polygon.is_empty or polygon.area < 0.5 * min_area:
         return []
 
     # Maybe keep block undivided
     if chance_no_divide > 0 and rng.random() < chance_no_divide:
-        coords = list(polygon.exterior.coords[:-1])
-        return [coords]
+        coords = _exterior_ring(polygon)
+        return [coords] if coords else []
 
     result = _subdivide_recursive(polygon, min_area, rng)
     return result
@@ -55,6 +145,9 @@ def _subdivide_recursive(
     rng: random.Random,
 ) -> List[List[Point2D]]:
     """Recursively subdivide polygon by longest edge."""
+    polygon = _as_single_polygon(polygon)
+    if polygon is None or polygon.is_empty:
+        return []
     area = polygon.area
     if area < 0.5 * min_area:
         return []
@@ -69,43 +162,38 @@ def _subdivide_recursive(
         return []
 
     if area < 2 * min_area:
-        coords = list(polygon.exterior.coords[:-1])
-        return [coords]
+        coords = _exterior_ring(polygon)
+        return [coords] if coords else []
 
-    # Find longest edge
-    coords = list(polygon.exterior.coords[:-1])
+    coords = _exterior_ring(polygon)
+    if len(coords) < 3:
+        return []
     n = len(coords)
-    longest_len = -1
-    longest_idx = 0
 
-    for i in range(n):
-        p1 = coords[i]
-        p2 = coords[(i + 1) % n]
-        dx = p2[0] - p1[0]
-        dy = p2[1] - p1[1]
-        length = (dx * dx + dy * dy) ** 0.5
-        if length > longest_len:
-            longest_len = length
-            longest_idx = i
+    picked = _pick_edge_index_weighted(coords, rng)
+    if picked is None:
+        coords = _exterior_ring(polygon)
+        return [coords] if coords else []
+    longest_idx, longest_len = picked
 
     if longest_len < 1e-6:
-        coords = list(polygon.exterior.coords[:-1])
-        return [coords]
+        coords = _exterior_ring(polygon)
+        return [coords] if coords else []
 
-    # Split point 40-60% along longest edge
-    deviation = rng.uniform(0.4, 0.6)
+    # Split point along chosen edge (seed-driven, avoids extreme slivers at corners)
+    t = rng.uniform(SPLIT_T_LO, SPLIT_T_HI)
     p1 = coords[longest_idx]
     p2 = coords[(longest_idx + 1) % n]
-    mid_x = p1[0] + (p2[0] - p1[0]) * deviation
-    mid_y = p1[1] + (p2[1] - p1[1]) * deviation
+    mid_x = p1[0] + (p2[0] - p1[0]) * t
+    mid_y = p1[1] + (p2[1] - p1[1]) * t
 
     # Perpendicular direction (normalized)
     dx = p2[0] - p1[0]
     dy = p2[1] - p1[1]
     length = (dx * dx + dy * dy) ** 0.5
     if length < 1e-9:
-        coords = list(polygon.exterior.coords[:-1])
-        return [coords]
+        coords = _exterior_ring(polygon)
+        return [coords] if coords else []
     perp_x = -dy / length
     perp_y = dx / length
 
@@ -118,8 +206,8 @@ def _subdivide_recursive(
     try:
         result = split(polygon, splitter)
     except Exception:
-        coords = list(polygon.exterior.coords[:-1])
-        return [coords]
+        coords = _exterior_ring(polygon)
+        return [coords] if coords else []
 
     # result is GeometryCollection; extract polygons
     parts = []
@@ -135,11 +223,18 @@ def _subdivide_recursive(
         parts = [result]
 
     if len(parts) < 2:
-        coords = list(polygon.exterior.coords[:-1])
-        return [coords]
+        coords = _exterior_ring(polygon)
+        return [coords] if coords else []
 
     # Recurse on each part
     output = []
     for part in parts:
-        output.extend(_subdivide_recursive(part, min_area, rng))
+        if not part.is_valid:
+            part = make_valid(part)
+        if part.geom_type == "Polygon" and not part.is_empty:
+            output.extend(_subdivide_recursive(part, min_area, rng))
+        elif part.geom_type == "MultiPolygon":
+            for p in part.geoms:
+                if not p.is_empty:
+                    output.extend(_subdivide_recursive(p, min_area, rng))
     return output
