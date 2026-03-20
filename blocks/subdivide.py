@@ -109,6 +109,7 @@ def subdivide_block(
     seed: int,
     min_area: float = 50.0,
     chance_no_divide: float = 0.05,
+    fragmentation: float = 1.0,
 ) -> List[List[Point2D]]:
     """
     Subdivide a block polygon into building footprints.
@@ -116,18 +117,24 @@ def subdivide_block(
     Args:
         vertices: Block boundary as list of (x, y) vertices (CCW)
         seed: Random seed for deterministic subdivision
-        min_area: Minimum lot area; controls subdivision depth
+        min_area: Target minimum lot area after any merge step; also sets coarsest
+            stop when fragmentation is 1 (see fragmentation).
         chance_no_divide: Probability (0-1) a block stays undivided
+        fragmentation: >= 1. Subdivision uses min_area / fragmentation as the
+            effective minimum size, producing more fragments (merged later).
 
     Returns:
         List of footprint vertex lists, each a building lot
     """
     rng = random.Random(seed)
+    frag = max(float(fragmentation), 1.0)
+    min_for_split = min_area / frag
+
     polygon = Polygon(vertices)
     if not polygon.is_valid:
         polygon = polygon.buffer(0)  # Fix invalid polygon
     polygon = _as_single_polygon(polygon)
-    if polygon is None or polygon.is_empty or polygon.area < 0.5 * min_area:
+    if polygon is None or polygon.is_empty or polygon.area < 0.5 * min_for_split:
         return []
 
     # Maybe keep block undivided
@@ -135,7 +142,7 @@ def subdivide_block(
         coords = _exterior_ring(polygon)
         return [coords] if coords else []
 
-    result = _subdivide_recursive(polygon, min_area, rng)
+    result = _subdivide_recursive(polygon, min_for_split, rng)
     return result
 
 

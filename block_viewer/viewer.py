@@ -22,10 +22,12 @@ import random
 from typing import List, Tuple
 
 from blocks.subdivide import subdivide_block
+from blocks.merge_fragments import merge_footprints_to_min_area
 from blocks.filter_internal import filter_footprints_touching_block
 from blocks.gap import apply_gaps
 from blocks.facade_noise import apply_facade_noise
 from blocks.facade_from_block import compute_facade_definition
+from core.footprint_cleanup import prepare_footprint_for_adjacency
 from blocks.stairs import collect_stairs_from_buildings
 
 
@@ -194,6 +196,11 @@ class BlockViewer:
         self.ui_elements.append(self.min_area_input)
         y += 35
 
+        self.ui_elements.append(Label((10, y + 5), "Fragmentation:", 20))
+        self.fragmentation_input = TextInput(pygame.Rect(100, y, 190, 30), "2")
+        self.ui_elements.append(self.fragmentation_input)
+        y += 35
+
         self.ui_elements.append(Label((10, y + 5), "Avg floors:", 20))
         self.avg_floors_input = TextInput(pygame.Rect(100, y, 190, 30), "5")
         self.ui_elements.append(self.avg_floors_input)
@@ -305,22 +312,38 @@ class BlockViewer:
             min_area = 50.0
             self.min_area_input.text = str(min_area)
 
-        key = (self.selected_block, seed, min_area)
+        try:
+            fragmentation = float(self.fragmentation_input.text)
+        except ValueError:
+            fragmentation = 2.0
+            self.fragmentation_input.text = str(fragmentation)
+        fragmentation = max(fragmentation, 1.0)
+
+        key = (self.selected_block, seed, min_area, fragmentation)
         if not force and key == getattr(self, "_subdivide_cache_key", None):
             self.block_vertices = block_vertices
             return
 
-        self.footprint_vertices_list = subdivide_block(
+        fragments = subdivide_block(
             block_vertices,
             seed=seed,
             min_area=min_area,
             chance_no_divide=0.05,
+            fragmentation=fragmentation,
+        )
+        merge_seed = derive_seed(seed, "merge_footprints", self.selected_block)
+        self.footprint_vertices_list = merge_footprints_to_min_area(
+            fragments,
+            block_vertices,
+            min_area=min_area,
+            seed=merge_seed,
         )
         self._subdivide_cache_key = key
         self.block_vertices = block_vertices
         print(
             f"Subdivided {self.selected_block} seed={seed} min_area={min_area} "
-            f"-> {len(self.footprint_vertices_list)} lots"
+            f"frag={fragmentation} -> {len(fragments)} frags -> "
+            f"{len(self.footprint_vertices_list)} lots"
         )
 
     def _load_block(self, block_name: str):
@@ -435,6 +458,11 @@ class BlockViewer:
                 facade_noise=facade_noise,
                 block_vertices=self.block_vertices,
             )
+            # Dedupe collinear vertices before facade adjacency (front/back/occlusion)
+            footprints = [
+                prepare_footprint_for_adjacency(fp) for fp in footprints
+            ]
+            footprints = [fp for fp in footprints if len(fp) >= 3]
             # floor_height is per-building from params (generate_building_params)
             try:
                 avg_floors = float(self.avg_floors_input.text)
@@ -610,7 +638,7 @@ class BlockViewer:
         print("  - Left mouse drag: Rotate camera")
         print("  - Middle mouse drag: Pan view")
         print("  - Mouse wheel: Zoom in/out")
-        print("  - Seed / Min area: apply automatically; Reload forces re-subdivide")
+        print("  - Seed / Min area / Fragmentation: auto-apply; Reload forces re-subdivide")
         print()
 
         while self.running:
