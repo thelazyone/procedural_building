@@ -6,7 +6,42 @@ Shared by building_viewer and block_viewer.
 """
 
 import pygame
-from typing import Optional, Callable, List
+from pygame.locals import K_BACKSPACE, K_DELETE, K_LEFT, K_RIGHT, K_HOME, K_END, K_RETURN, K_TAB
+from typing import Optional, Callable, List, Any
+
+
+def collect_text_inputs(elements: List[Any]) -> List["TextInput"]:
+    """Return every TextInput instance in a flat ui_elements list."""
+    return [el for el in elements if isinstance(el, TextInput)]
+
+
+def wire_text_inputs_blur(elements: List[Any], callback: Callable[[], None]) -> None:
+    """
+    Set on_blur on all TextInput widgets in elements.
+
+    Call once after the full panel is built so every field shares the same commit
+    callback (e.g. regenerate scene on focus loss).
+    """
+    for el in elements:
+        if isinstance(el, TextInput):
+            el.on_blur = callback
+
+
+def blur_text_inputs_unless_clicked(text_inputs: List["TextInput"], event: pygame.event.Event) -> None:
+    """
+    Deactivate any TextInput that was not clicked. Call on MOUSEBUTTONDOWN before
+    dispatching to widgets so focus moves cleanly between fields.
+    Invokes on_blur when a field loses focus.
+    """
+    if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
+        return
+    for t in text_inputs:
+        if not t.rect.collidepoint(event.pos):
+            if t.active:
+                t.active = False
+                t._replace_next = False
+                if t.on_blur is not None:
+                    t.on_blur()
 
 
 class Button:
@@ -84,20 +119,52 @@ class TextInput:
         self.rect = rect
         self.text = default_text
         self.active = False
+        # After focus, first typing replaces entire content (standard "select all" behaviour).
+        self._replace_next = False
         self.font = pygame.font.Font(None, 24)
+        # Called when focus is lost (click away, Enter, Tab, or blur helper).
+        self.on_blur: Optional[Callable[[], None]] = None
+
+    def _fire_blur(self) -> None:
+        if self.on_blur is not None:
+            self.on_blur()
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle keyboard/mouse events. Returns True if handled."""
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            self.active = self.rect.collidepoint(event.pos)
-            return self.active
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.rect.collidepoint(event.pos):
+                self.active = True
+                self._replace_next = True
+                return True
+            return False
 
         if self.active and event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_RETURN:
+            if event.key == K_RETURN or event.key == K_TAB:
                 self.active = False
-            elif event.key == pygame.K_BACKSPACE:
+                self._replace_next = False
+                self._fire_blur()
+                return True
+
+            if self._replace_next:
+                if event.key in (K_LEFT, K_RIGHT, K_HOME, K_END):
+                    self._replace_next = False
+                    return True
+                if event.key == K_BACKSPACE or event.key == K_DELETE:
+                    self.text = ""
+                    self._replace_next = False
+                    return True
+                if event.unicode and event.unicode.isprintable():
+                    self.text = event.unicode
+                    self._replace_next = False
+                    return True
+                return True
+
+            if event.key == K_BACKSPACE:
                 self.text = self.text[:-1]
-            else:
+            elif event.key == K_DELETE:
+                if self.text:
+                    self.text = self.text[:-1]
+            elif event.unicode and event.unicode.isprintable():
                 self.text += event.unicode
             return True
         return False

@@ -13,7 +13,16 @@ from OpenGL.GL import *
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from core.camera import OrbitCamera
-from core.simple_ui import Button, Label, TextInput, RadioButton, Checkbox
+from core.simple_ui import (
+    Button,
+    Label,
+    TextInput,
+    RadioButton,
+    Checkbox,
+    blur_text_inputs_unless_clicked,
+    collect_text_inputs,
+    wire_text_inputs_blur,
+)
 from block_viewer.renderer import BlockRenderer
 from building_viewer.renderer import BuildingRenderer
 from building import Building, generate_building_params
@@ -106,6 +115,7 @@ class BlockViewer:
 
         self.ui_elements = []
         self.radio_buttons = []
+        self.text_inputs = []
         self.selected_block = None
         self._create_ui()
 
@@ -187,8 +197,14 @@ class BlockViewer:
         y += 30
 
         self.ui_elements.append(Label((10, y + 5), "Seed:", 20))
-        self.seed_input = TextInput(pygame.Rect(100, y, 190, 30), "12345")
+        self.seed_input = TextInput(pygame.Rect(72, y, 118, 30), "12345")
         self.ui_elements.append(self.seed_input)
+        rnd_seed_btn = Button(
+            pygame.Rect(195, y, 95, 30),
+            "Random",
+            self._random_block_seed,
+        )
+        self.ui_elements.append(rnd_seed_btn)
         y += 35
 
         self.ui_elements.append(Label((10, y + 5), "Min Area:", 20))
@@ -199,6 +215,7 @@ class BlockViewer:
         self.ui_elements.append(Label((10, y + 5), "Fragmentation:", 20))
         self.fragmentation_input = TextInput(pygame.Rect(100, y, 190, 30), "2")
         self.ui_elements.append(self.fragmentation_input)
+        self.text_inputs.append(self.fragmentation_input)
         y += 35
 
         self.ui_elements.append(Label((10, y + 5), "Avg floors:", 20))
@@ -209,6 +226,7 @@ class BlockViewer:
         self.ui_elements.append(Label((10, y + 5), "Variance:", 20))
         self.variance_input = TextInput(pygame.Rect(100, y, 190, 30), "0.5")
         self.ui_elements.append(self.variance_input)
+        self.text_inputs.append(self.variance_input)
         y += 35
 
         self.ui_elements.append(Label((10, y + 5), "Gap chance:", 20))
@@ -219,6 +237,7 @@ class BlockViewer:
         self.ui_elements.append(Label((10, y + 5), "Gap size:", 20))
         self.gap_size_input = TextInput(pygame.Rect(100, y, 190, 30), "2")
         self.ui_elements.append(self.gap_size_input)
+        self.text_inputs.append(self.gap_size_input)
         y += 35
 
         self.ui_elements.append(Label((10, y + 5), "Facade noise:", 20))
@@ -281,16 +300,88 @@ class BlockViewer:
         y += 22
         self.ui_elements.append(Label((10, y), "Blue=front, Orange=occlusion, Gray=back", 14))
 
+        wire_text_inputs_blur(self.ui_elements, self._commit_block_params)
+        self.text_inputs = collect_text_inputs(self.ui_elements)
+
         self.selected_block = block_names[0]
         self._load_block(block_names[0])
 
-    def _sync_block_subdivision(self, force: bool = False) -> None:
-        """
-        Recompute building lots from the current template + seed + min area.
+    @staticmethod
+    def _fmt_num(v: float) -> str:
+        if abs(v - round(v)) < 1e-9:
+            return str(int(round(v)))
+        return str(v)
 
-        Runs each frame when (block, seed, min_area) change so the seed field
-        takes effect without pressing Reload. Use force=True after picking a
-        block or Reload to always re-run subdivision.
+    def _normalize_block_panel_fields(self) -> None:
+        """Clamp invalid / empty text to defaults (call on blur / commit only)."""
+        s = self.seed_input.text.strip()
+        if not s:
+            self.seed_input.text = "12345"
+        else:
+            try:
+                self.seed_input.text = str(int(s))
+            except ValueError:
+                self.seed_input.text = "12345"
+
+        s = self.min_area_input.text.strip()
+        try:
+            v = float(s) if s else 50.0
+            self.min_area_input.text = self._fmt_num(max(v, 0.01))
+        except ValueError:
+            self.min_area_input.text = "50"
+
+        s = self.fragmentation_input.text.strip()
+        try:
+            v = float(s) if s else 2.0
+            v = max(1.0, v)
+            self.fragmentation_input.text = self._fmt_num(v)
+        except ValueError:
+            self.fragmentation_input.text = "2"
+
+        for inp, default in (
+            (self.avg_floors_input, 5.0),
+            (self.variance_input, 0.5),
+            (self.gap_chance_input, 0.2),
+            (self.gap_size_input, 2.0),
+            (self.facade_noise_input, 0.0),
+        ):
+            s = inp.text.strip()
+            try:
+                v = float(s) if s else default
+                inp.text = self._fmt_num(v)
+            except ValueError:
+                inp.text = self._fmt_num(default)
+
+        try:
+            gc = float(self.gap_chance_input.text)
+            gc = max(0.0, min(1.0, gc))
+            self.gap_chance_input.text = self._fmt_num(gc)
+        except ValueError:
+            self.gap_chance_input.text = "0.2"
+
+        try:
+            vv = float(self.variance_input.text)
+            vv = max(0.0, min(1.0, vv))
+            self.variance_input.text = self._fmt_num(vv)
+        except ValueError:
+            self.variance_input.text = "0.5"
+
+    def _commit_block_params(self) -> None:
+        """Apply panel values: normalize text, then subdivide if needed (blur / leave field)."""
+        self._sync_block_subdivision(force=False, commit=True)
+
+    def _random_block_seed(self) -> None:
+        self.seed_input.text = str(random.randint(0, 2**31 - 1))
+        self.seed_input.active = False
+        self.seed_input._replace_next = False
+        self._sync_block_subdivision(force=False, commit=True)
+
+    def _sync_block_subdivision(self, force: bool = False, commit: bool = False) -> None:
+        """
+        Recompute building lots from the current template + seed + min area + fragmentation.
+
+        Call with commit=True after editing (blur) to normalize fields and subdivide.
+        force=True skips cache (new block template or Reload).
         """
         if getattr(self, "_user_cleared_block", False):
             return
@@ -300,24 +391,12 @@ class BlockViewer:
         template = self.block_templates[self.selected_block]
         block_vertices = template["vertices"]
 
-        try:
-            seed = int(self.seed_input.text)
-        except ValueError:
-            seed = 12345
-            self.seed_input.text = str(seed)
+        if commit or force:
+            self._normalize_block_panel_fields()
 
-        try:
-            min_area = float(self.min_area_input.text)
-        except ValueError:
-            min_area = 50.0
-            self.min_area_input.text = str(min_area)
-
-        try:
-            fragmentation = float(self.fragmentation_input.text)
-        except ValueError:
-            fragmentation = 2.0
-            self.fragmentation_input.text = str(fragmentation)
-        fragmentation = max(fragmentation, 1.0)
+        seed = int(self.seed_input.text)
+        min_area = float(self.min_area_input.text)
+        fragmentation = max(1.0, float(self.fragmentation_input.text))
 
         key = (self.selected_block, seed, min_area, fragmentation)
         if not force and key == getattr(self, "_subdivide_cache_key", None):
@@ -356,12 +435,12 @@ class BlockViewer:
         for radio in self.radio_buttons:
             radio.selected = (radio.text == block_name)
 
-        self._sync_block_subdivision(force=True)
+        self._sync_block_subdivision(force=True, commit=True)
 
     def _reload_block(self):
         """Force subdivision with current seed / min area (same as re-selecting block)."""
         if self.selected_block:
-            self._sync_block_subdivision(force=True)
+            self._sync_block_subdivision(force=True, commit=True)
 
     def _clear_block(self):
         """Clear current block."""
@@ -378,6 +457,9 @@ class BlockViewer:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                blur_text_inputs_unless_clicked(self.text_inputs, event)
 
             mouse_pos = pygame.mouse.get_pos()
             if mouse_pos[0] < self.ui_panel_width:
@@ -419,8 +501,6 @@ class BlockViewer:
 
         glEnable(GL_DEPTH_TEST)
         self.renderer.render_grid()
-
-        self._sync_block_subdivision(force=False)
 
         if self.block_vertices is not None and self.footprint_vertices_list is not None:
             footprints = self.footprint_vertices_list
@@ -638,7 +718,8 @@ class BlockViewer:
         print("  - Left mouse drag: Rotate camera")
         print("  - Middle mouse drag: Pan view")
         print("  - Mouse wheel: Zoom in/out")
-        print("  - Seed / Min area / Fragmentation: auto-apply; Reload forces re-subdivide")
+        print("  - Tab/Enter/click away commits; Random picks a new seed")
+        print("  - Reload forces re-subdivide with current values")
         print()
 
         while self.running:

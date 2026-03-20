@@ -7,6 +7,7 @@ and provides real-time visualization and parameter adjustment.
 
 import sys
 import os
+import random
 import pygame
 from pygame.locals import *
 from OpenGL.GL import *
@@ -15,9 +16,17 @@ from OpenGL.GL import *
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from building import Building
-from building.floor.floor import Floor
 from core.camera import OrbitCamera
-from core.simple_ui import Button, Label, TextInput, Checkbox, RadioButton
+from core.simple_ui import (
+    Button,
+    Label,
+    TextInput,
+    Checkbox,
+    RadioButton,
+    blur_text_inputs_unless_clicked,
+    collect_text_inputs,
+    wire_text_inputs_blur,
+)
 from building_viewer.renderer import BuildingRenderer
 
 
@@ -60,7 +69,10 @@ class BuildingViewer:
         # Create UI elements
         self.ui_elements = []
         self.radio_buttons = []
+        self.text_inputs = []
         self.selected_building = None
+        self._building_geometry_key = None
+        self._generation_visual_key = None
         self.create_ui()
 
         # Initialize 3D components
@@ -105,8 +117,14 @@ class BuildingViewer:
 
         # Seed
         self.ui_elements.append(Label((10, y + 5), "Seed:", 20))
-        self.seed_input = TextInput(pygame.Rect(100, y, 190, 30), "12345")
+        self.seed_input = TextInput(pygame.Rect(72, y, 118, 30), "12345")
         self.ui_elements.append(self.seed_input)
+        rnd_seed_btn = Button(
+            pygame.Rect(195, y, 95, 30),
+            "Random",
+            self._random_building_seed,
+        )
+        self.ui_elements.append(rnd_seed_btn)
         y += 35
 
         # Floor Height
@@ -192,6 +210,9 @@ class BuildingViewer:
         self.ui_elements.append(self.roof_checkbox)
         y += 35
 
+        wire_text_inputs_blur(self.ui_elements, self._commit_building_panel)
+        self.text_inputs = collect_text_inputs(self.ui_elements)
+
         # Load first building by default
         self.selected_building = "Small House"
         self.load_building_by_name("Small House")
@@ -251,7 +272,99 @@ class BuildingViewer:
 
         return templates
 
-    def load_building_by_name(self, building_name: str):
+    @staticmethod
+    def _fmt_num(v: float) -> str:
+        if abs(v - round(v)) < 1e-9:
+            return str(int(round(v)))
+        return str(v)
+
+    def _generation_params_text_key(self) -> tuple:
+        return (
+            self.door_density_input.text,
+            self.above_occlusion_door_chance_input.text,
+            self.window_density_input.text,
+            self.corner_size_input.text,
+            self.window_size_input.text,
+            self.floor_band_input.text,
+            self.wall_offset_input.text,
+        )
+
+    def _normalize_all_building_fields(self, template: dict) -> None:
+        """Fix invalid / empty numeric fields (blur / load only)."""
+        dseed = template.get("default_seed", 12345)
+        s = self.seed_input.text.strip()
+        if not s:
+            self.seed_input.text = str(dseed)
+        else:
+            try:
+                self.seed_input.text = str(int(s))
+            except ValueError:
+                self.seed_input.text = str(dseed)
+
+        fh_def = template.get("floor_heights", [3.0])[0]
+        s = self.floor_height_input.text.strip()
+        try:
+            v = float(s) if s else fh_def
+            self.floor_height_input.text = self._fmt_num(max(0.1, v))
+        except ValueError:
+            self.floor_height_input.text = self._fmt_num(fh_def)
+
+        defaults = [
+            (self.door_density_input, 0.05),
+            (self.above_occlusion_door_chance_input, 0.65),
+            (self.window_density_input, 0.3),
+            (self.corner_size_input, 0.15),
+            (self.window_size_input, 1.2),
+            (self.floor_band_input, 0.3),
+            (self.wall_offset_input, 0.0),
+        ]
+        for inp, dflt in defaults:
+            s = inp.text.strip()
+            try:
+                v = float(s) if s else dflt
+                inp.text = self._fmt_num(v)
+            except ValueError:
+                inp.text = self._fmt_num(dflt)
+        try:
+            u = float(self.above_occlusion_door_chance_input.text)
+            u = max(0.0, min(1.0, u))
+            self.above_occlusion_door_chance_input.text = self._fmt_num(u)
+        except ValueError:
+            self.above_occlusion_door_chance_input.text = "0.65"
+
+    def _commit_building_panel(self) -> None:
+        """Normalize fields and rebuild / clear caches when something changed (blur)."""
+        if self.selected_building not in self.building_templates:
+            return
+        template = self.building_templates[self.selected_building]
+        self._normalize_all_building_fields(template)
+
+        new_geom = (
+            self.selected_building,
+            self.seed_input.text,
+            self.floor_height_input.text,
+        )
+        new_gen = self._generation_params_text_key()
+
+        need_reload = self.current_building is None or new_geom != self._building_geometry_key
+        if need_reload:
+            self.load_building_by_name(self.selected_building, quiet=True, commit=False)
+        elif new_gen != self._generation_visual_key and self.current_building is not None:
+            for i in range(self.current_building.num_floors):
+                self.current_building.get_floor(i).clear_generated()
+            self._generation_visual_key = new_gen
+
+    def _random_building_seed(self) -> None:
+        if self.selected_building not in self.building_templates:
+            return
+        self.seed_input.text = str(random.randint(0, 2**31 - 1))
+        self.seed_input.active = False
+        self.seed_input._replace_next = False
+        self._commit_building_panel()
+
+    def load_building_by_name(
+        self, building_name: str, quiet: bool = False, commit: bool = True
+    ):
         """Load building by name."""
         if building_name not in self.building_templates:
             print(f"Unknown building: {building_name}")
@@ -263,19 +376,12 @@ class BuildingViewer:
 
         template = self.building_templates[building_name]
 
-        try:
-            seed = int(self.seed_input.text)
-        except ValueError:
-            seed = template['default_seed']
-            self.seed_input.text = str(seed)
+        if commit:
+            self._normalize_all_building_fields(template)
 
-        try:
-            floor_height = float(self.floor_height_input.text)
-            floor_heights = [floor_height] * len(template['floors'])
-        except (ValueError, AttributeError):
-            floor_heights = template['floor_heights']
-            floor_height = floor_heights[0]
-            self.floor_height_input.text = str(floor_height)
+        seed = int(self.seed_input.text)
+        floor_height = float(self.floor_height_input.text)
+        floor_heights = [floor_height] * len(template["floors"])
 
         self.current_building = Building(
             floors=template['floors'],
@@ -293,18 +399,26 @@ class BuildingViewer:
         except (ValueError, AttributeError):
             window_density = 0.3
 
-        print(f"Loaded {building_name} with seed {seed}")
-        print(f"  Floors: {self.current_building.num_floors}")
-        print(f"  Floor height: {floor_height:.1f}m")
-        try:
-            upper_door = float(self.above_occlusion_door_chance_input.text)
-        except (ValueError, AttributeError):
-            upper_door = 0.65
-        print(
-            f"  Door density: {door_density}, upper-floor chance: {upper_door}, "
-            f"Window density: {window_density}"
+        self._building_geometry_key = (
+            self.selected_building,
+            self.seed_input.text,
+            self.floor_height_input.text,
         )
-        print(f"  Total height: {self.current_building.get_total_height():.1f}m")
+        self._generation_visual_key = self._generation_params_text_key()
+
+        if not quiet:
+            print(f"Loaded {building_name} with seed {seed}")
+            print(f"  Floors: {self.current_building.num_floors}")
+            print(f"  Floor height: {floor_height:.1f}m")
+            try:
+                upper_door = float(self.above_occlusion_door_chance_input.text)
+            except (ValueError, AttributeError):
+                upper_door = 0.65
+            print(
+                f"  Door density: {door_density}, upper-floor chance: {upper_door}, "
+                f"Window density: {window_density}"
+            )
+            print(f"  Total height: {self.current_building.get_total_height():.1f}m")
 
     def reload_current_building(self):
         """Reload current building with new parameters."""
@@ -317,13 +431,35 @@ class BuildingViewer:
                 floor = self.current_building.get_floor(i)
                 floor.clear_generated()
 
+        self._building_geometry_key = None
+        self._generation_visual_key = None
         print(f"\nReloading {self.selected_building} with new parameters...")
-        self.load_building_by_name(self.selected_building)
+        self.load_building_by_name(self.selected_building, quiet=False, commit=True)
 
     def clear_building(self):
         """Clear current building."""
         self.current_building = None
+        self._building_geometry_key = None
+        self._generation_visual_key = None
         print("Building cleared")
+
+    def _sync_building_geometry_from_panel(self):
+        """Rebuild Building when seed or floor height changes (auto-update)."""
+        if self.current_building is None:
+            return
+        if (
+            self.selected_building is None
+            or self.selected_building not in self.building_templates
+        ):
+            return
+        key = (
+            self.selected_building,
+            self.seed_input.text,
+            self.floor_height_input.text,
+        )
+        if key == self._building_geometry_key:
+            return
+        self.load_building_by_name(self.selected_building, quiet=True)
 
     def handle_events(self):
         """Handle pygame events."""
@@ -332,6 +468,9 @@ class BuildingViewer:
         for event in pygame.event.get():
             if event.type == QUIT:
                 self.running = False
+
+            if event.type == MOUSEBUTTONDOWN and event.button == 1:
+                blur_text_inputs_unless_clicked(self.text_inputs, event)
 
             mouse_pos = pygame.mouse.get_pos()
             if mouse_pos[0] < self.ui_panel_width:
@@ -406,13 +545,25 @@ class BuildingViewer:
             except (ValueError, AttributeError):
                 wall_offset = 0.0
 
+            try:
+                window_width = float(self.window_size_input.text)
+            except (ValueError, AttributeError):
+                window_width = 1.2
+
+            try:
+                floor_band = float(self.floor_band_input.text)
+            except (ValueError, AttributeError):
+                floor_band = 0.3
+
             generation_params = {
                 'door_density': door_density,
                 'above_occlusion_door_chance': above_occlusion_door_chance,
                 'window_density': window_density,
                 'edge_spacing': 1.0,
                 'corner_size': corner_size,
-                'wall_offset': wall_offset
+                'wall_offset': wall_offset,
+                'width': window_width,
+                'floor_band': floor_band,
             }
 
             self.renderer.render_building(self.current_building, generation_params)
@@ -447,8 +598,8 @@ class BuildingViewer:
         print("  - Left mouse drag: Rotate camera")
         print("  - Middle mouse drag: Pan view")
         print("  - Mouse wheel: Zoom in/out")
-        print("  - Load button: Load selected building")
-        print("  - Clear button: Clear building")
+        print("  - Tab/Enter/click away commits fields; 3D view click unfocuses")
+        print("  - Random: new seed + commit; Reload: rebuild + print summary")
         print()
 
         while self.running:
